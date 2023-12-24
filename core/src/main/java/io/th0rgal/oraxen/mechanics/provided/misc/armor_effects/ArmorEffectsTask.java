@@ -8,8 +8,12 @@ public class ArmorEffectsTask extends BukkitRunnable {
 
     @Override
     public void run() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            ArmorEffectsMechanic.addEffects(player);
+        try {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                ArmorEffectsMechanic.addEffects(player);
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
         }
     }
 }
