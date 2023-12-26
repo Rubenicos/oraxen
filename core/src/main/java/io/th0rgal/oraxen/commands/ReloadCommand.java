@@ -13,6 +13,7 @@ import io.th0rgal.oraxen.config.Settings;
 import io.th0rgal.oraxen.hud.HudManager;
 import io.th0rgal.oraxen.items.ItemUpdater;
 import io.th0rgal.oraxen.mechanics.MechanicsManager;
+import io.th0rgal.oraxen.mechanics.provided.misc.armor_effects.ArmorEffectsFactory;
 import io.th0rgal.oraxen.recipes.RecipesManager;
 import io.th0rgal.oraxen.utils.AdventureUtils;
 import io.th0rgal.oraxen.utils.logs.Logs;
@@ -55,6 +56,11 @@ public class ReloadCommand {
 
     }
 
+    public static void reloadItemsTask(@Nullable CommandSender sender) {
+        ArmorEffectsFactory.getInstance().reloadTask();
+        sender.sendMessage("[Oraxen] Reloaded items task");
+    }
+
     public static void reloadPack(@Nullable CommandSender sender) {
         Message.PACK_REGENERATED.send(sender);
         OraxenPack.reloadPack();
@@ -86,11 +92,12 @@ public class ReloadCommand {
                 .withAliases("rl")
                 .withPermission("oraxen.command.reload")
                 .withArguments(new TextArgument("type").replaceSuggestions(
-                        ArgumentSuggestions.strings("items", "pack", "hud", "recipes", "messages", "all")))
+                        ArgumentSuggestions.strings("items", "itemstask", "pack", "hud", "recipes", "messages", "all")))
                 .executes((sender, args) -> {
                     switch (((String) args.get("type")).toUpperCase()) {
                         case "HUD" -> reloadHud(sender);
                         case "ITEMS" -> reloadItems(sender);
+                        case "ITEMSTASK" -> reloadItemsTask(sender);
                         case "PACK" -> reloadPack(sender);
                         case "RECIPES" -> reloadRecipes(sender);
                         case "CONFIGS" -> OraxenPlugin.get().reloadConfigs();
