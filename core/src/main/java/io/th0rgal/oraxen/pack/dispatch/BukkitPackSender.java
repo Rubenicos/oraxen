@@ -1,5 +1,7 @@
 package io.th0rgal.oraxen.pack.dispatch;
 
+import com.comphenix.protocol.ProtocolManager;
+import com.viaversion.viaversion.api.Via;
 import io.th0rgal.oraxen.OraxenPlugin;
 import io.th0rgal.oraxen.config.Settings;
 import io.th0rgal.oraxen.pack.upload.hosts.HostingProvider;
@@ -20,12 +22,31 @@ public class BukkitPackSender extends PackSender implements Listener {
     private static final String prompt = Settings.SEND_PACK_PROMPT.toString();
     private static final boolean mandatory = Settings.SEND_PACK_MANDATORY.toBool();
 
+    private final ProtocolManager protocolManager;
+    private boolean useViaVersion;
+
     public BukkitPackSender(HostingProvider hostingProvider) {
         super(hostingProvider);
+        protocolManager = OraxenPlugin.get().getProtocolManager();
+    }
+
+    @SuppressWarnings("unchecked")
+    public int getPlayerProtocol(Player player) {
+        if (useViaVersion) {
+            return Via.getAPI().getPlayerVersion(player);
+        } else {
+            return protocolManager.getProtocolVersion(player);
+        }
     }
 
     public void register() {
         Bukkit.getPluginManager().registerEvents(this, OraxenPlugin.get());
+        if (Bukkit.getPluginManager().isPluginEnabled("ViaVersion")) {
+            try {
+                Class.forName("com.viaversion.viaversion.api.Via");
+                useViaVersion = true;
+            } catch (ClassNotFoundException ignored) { }
+        }
     }
 
     public void unregister() {
@@ -34,6 +55,11 @@ public class BukkitPackSender extends PackSender implements Listener {
 
     @Override
     public void sendPack(Player player) {
+        int minProtocol = (int) Settings.SEND_PACK_MIN_PROTOCOL.getValue();
+        int playerProtocol;
+        if (minProtocol > 0 && (playerProtocol = getPlayerProtocol(player)) > 0 && playerProtocol < minProtocol) {
+            return;
+        }
         if (VersionUtil.isSupportedVersionOrNewer("1.20.3"))
             player.setResourcePack(UUID.randomUUID(), hostingProvider.getMinecraftPackURL(), hostingProvider.getSHA1(), AdventureUtils.parseLegacy(prompt), mandatory);
         if (VersionUtil.isPaperServer()) player.setResourcePack(hostingProvider.getMinecraftPackURL(), hostingProvider.getSHA1(), AdventureUtils.MINI_MESSAGE.deserialize(prompt), mandatory);
