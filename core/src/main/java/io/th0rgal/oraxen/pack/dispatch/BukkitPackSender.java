@@ -1,5 +1,6 @@
 package io.th0rgal.oraxen.pack.dispatch;
 
+import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.ProtocolManager;
 import com.viaversion.viaversion.api.Via;
 import io.th0rgal.oraxen.OraxenPlugin;
@@ -25,7 +26,7 @@ public class BukkitPackSender extends PackSender implements Listener {
 
     public BukkitPackSender(HostingProvider hostingProvider) {
         super(hostingProvider);
-        protocolManager = OraxenPlugin.get().getProtocolManager();
+        protocolManager = ProtocolLibrary.getProtocolManager();
     }
 
     @SuppressWarnings("unchecked")
