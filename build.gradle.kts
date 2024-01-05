@@ -106,7 +106,7 @@ allprojects {
         compileOnly(files("../libs/compile/BSP.jar"))
         compileOnly("dev.jorel:commandapi-bukkit-shade:$commandApiVersion")
         compileOnly("io.lumine:MythicLib:1.1.6")
-        compileOnly("net.Indyuce:MMOItems-API:6.9.5-SNAPSHOT")
+        compileOnly("net.Indyuce:MMOItems-API:6.9.4-SNAPSHOT")
         compileOnly("org.joml:joml:1.10.5") // Because pre 1.19.4 api does not have this in the server-jar
         compileOnly("com.willfp:EcoItems:5.23.0")
         compileOnly("com.willfp:eco:6.65.5")
