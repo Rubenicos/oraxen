@@ -33,6 +33,12 @@ public class ArmorEffectsFactory extends MechanicFactory {
         return mechanic;
     }
 
+    public void reloadTask() {
+        if (armorEffectTask != null) armorEffectTask.cancel();
+        armorEffectTask = new ArmorEffectsTask();
+        armorEffectTask.runTaskTimer(OraxenPlugin.get(), 0, delay);
+    }
+
     public int getDelay() {
         return delay;
     }
