@@ -10,6 +10,7 @@ import io.th0rgal.oraxen.config.Settings;
 import io.th0rgal.oraxen.font.Font;
 import io.th0rgal.oraxen.font.FontManager;
 import io.th0rgal.oraxen.font.Glyph;
+import io.th0rgal.oraxen.font.packets.ScoreboardPacketListener;
 import io.th0rgal.oraxen.gestures.GestureManager;
 import io.th0rgal.oraxen.items.ItemBuilder;
 import io.th0rgal.oraxen.items.OraxenMeta;
@@ -62,7 +63,7 @@ public class ResourcePack {
 
         if (!Settings.GENERATE.toBool()) return;
 
-        if (Settings.HIDE_SCOREBOARD_NUMBERS.toBool() && Bukkit.getPluginManager().isPluginEnabled("HappyHUD")) {
+        if (Settings.HIDE_SCOREBOARD_NUMBERS.toBool() && PluginUtils.isEnabled("HappyHUD")) {
             Logs.logError("HappyHUD detected with hide_scoreboard_numbers enabled!");
             Logs.logWarning("Recommend following this guide for compatibility: https://docs.oraxen.com/compatibility/happyhud");
         }
@@ -80,7 +81,7 @@ public class ResourcePack {
         generatePredicates(extractTexturedItems());
         generateFont();
         if (Settings.GESTURES_ENABLED.toBool()) generateGestureFiles();
-        if (Settings.HIDE_SCOREBOARD_NUMBERS.toBool()) generateScoreboardHideNumbers();
+        if (Settings.HIDE_SCOREBOARD_NUMBERS.toBool()) hideScoreboardNumbers();
         if (Settings.HIDE_SCOREBOARD_BACKGROUND.toBool()) generateScoreboardHideBackground();
         if (Settings.GENERATE_ARMOR_SHADER_FILES.toBool()) CustomArmorsTextures.generateArmorShaderFiles();
         if (Settings.TEXTURE_SLICER.toBool()) PackSlicer.slicePackFiles();
@@ -149,9 +150,14 @@ public class ResourcePack {
             EventUtils.callEvent(event);
             ZipUtils.writeZipFile(pack, event.getOutput());
 
-            UploadManager uploadManager = new UploadManager(OraxenPlugin.get());
-            OraxenPlugin.get().setUploadManager(uploadManager);
-            uploadManager.uploadAsyncAndSendToPlayers(OraxenPlugin.get().getResourcePack());
+            UploadManager uploadManager = OraxenPlugin.get().getUploadManager();
+            if (uploadManager != null) { // If the uploadManager isnt null, this was triggered by a pack-reload
+                uploadManager.uploadAsyncAndSendToPlayers(OraxenPlugin.get().getResourcePack(), true, true);
+            } else { // Otherwise this is was triggered on server-startup
+                uploadManager = new UploadManager(OraxenPlugin.get());
+                OraxenPlugin.get().setUploadManager(uploadManager);
+                uploadManager.uploadAsyncAndSendToPlayers(OraxenPlugin.get().getResourcePack(), false, false);
+            }
         });
     }
 
@@ -327,8 +333,8 @@ public class ResourcePack {
         final Map<Material, List<ItemBuilder>> texturedItems = new HashMap<>();
         for (final Map.Entry<String, ItemBuilder> entry : OraxenItems.getEntries()) {
             final ItemBuilder item = entry.getValue();
-            if (item.getOraxenMeta().hasPackInfos()) {
-                OraxenMeta oraxenMeta = item.getOraxenMeta();
+            OraxenMeta oraxenMeta = item.getOraxenMeta();
+            if (item.hasOraxenMeta() && oraxenMeta.hasPackInfos()) {
                 if (oraxenMeta.shouldGenerateModel()) {
                     writeStringToVirtual(oraxenMeta.getModelPath(),
                             item.getOraxenMeta().getModelName() + ".json",
@@ -644,13 +650,17 @@ public class ResourcePack {
             "th_th", "tl_ph", "tlh_aa", "tok", "tr_tr", "tt_ru", "uk_ua", "val_es",
             "vec_it", "vi_vn", "yi_de", "yo_ng", "zh_cn", "zh_hk", "zh_tw", "zlm_arab"));
 
-    private void generateScoreboardHideNumbers() {
-        writeStringToVirtual("assets/minecraft/shaders/core/", "rendertype_text.json", getScoreboardJson());
-        writeStringToVirtual("assets/minecraft/shaders/core/", "rendertype_text.vsh", getScoreboardVsh());
+    private void hideScoreboardNumbers() {
+        if (VersionUtil.atOrAbove("1.20.3")) {
+            OraxenPlugin.get().getProtocolManager().addPacketListener(new ScoreboardPacketListener());
+        } else { // Pre 1.20.3 rely on shaders
+            writeStringToVirtual("assets/minecraft/shaders/core/", "rendertype_text.json", getScoreboardJson());
+            writeStringToVirtual("assets/minecraft/shaders/core/", "rendertype_text.vsh", getScoreboardVsh());
+        }
     }
 
     private void generateScoreboardHideBackground() {
-        String fileName = VersionUtil.isSupportedVersionOrNewer("1.20.1") ? "rendertype_gui.vsh" : "position_color.fsh";
+        String fileName = VersionUtil.atOrAbove("1.20.1") ? "rendertype_gui.vsh" : "position_color.fsh";
         writeStringToVirtual("assets/minecraft/shaders/core/", fileName, getScoreboardBackground());
     }
 
@@ -725,7 +735,7 @@ public class ResourcePack {
     }
 
     private String getScoreboardBackground() {
-        if (VersionUtil.isSupportedVersionOrNewer("1.20.1"))
+        if (VersionUtil.atOrAbove("1.20.1"))
             return """
                     #version 150
                                         

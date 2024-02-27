@@ -6,7 +6,6 @@ import io.th0rgal.oraxen.api.OraxenBlocks;
 import io.th0rgal.oraxen.api.OraxenItems;
 import io.th0rgal.oraxen.api.events.noteblock.OraxenNoteBlockInteractEvent;
 import io.th0rgal.oraxen.api.events.noteblock.OraxenNoteBlockPlaceEvent;
-import io.th0rgal.oraxen.config.Settings;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.limitedplacing.LimitedPlacing;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.noteblock.directional.DirectionalBlock;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.storage.StorageMechanic;
@@ -16,17 +15,13 @@ import io.th0rgal.oraxen.utils.Utils;
 import io.th0rgal.oraxen.utils.VersionUtil;
 import io.th0rgal.oraxen.utils.breaker.BreakerSystem;
 import io.th0rgal.oraxen.utils.breaker.HardnessModifier;
-import io.th0rgal.oraxen.utils.logs.Logs;
 import io.th0rgal.protectionlib.ProtectionLib;
 import org.apache.commons.lang3.Range;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
-import org.bukkit.block.data.Directional;
-import org.bukkit.block.data.Levelled;
 import org.bukkit.block.data.type.NoteBlock;
-import org.bukkit.entity.EntityType;
 import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
@@ -46,7 +41,6 @@ import org.bukkit.util.RayTraceResult;
 
 import java.util.*;
 
-import static io.th0rgal.oraxen.utils.BlockHelpers.getAnvilFacing;
 import static io.th0rgal.oraxen.utils.BlockHelpers.isLoaded;
 
 public class NoteBlockMechanicListener implements Listener {
@@ -87,21 +81,22 @@ public class NoteBlockMechanicListener implements Listener {
 
         @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
         public void onBlockPhysics(final BlockPhysicsEvent event) {
-            final Block aboveBlock = event.getBlock().getRelative(BlockFace.UP);
-            final Block belowBlock = event.getBlock().getRelative(BlockFace.DOWN);
+            final Block block = event.getBlock();
+            final Block aboveBlock = block.getRelative(BlockFace.UP);
+            final Block belowBlock = block.getRelative(BlockFace.DOWN);
             // If block below is NoteBlock, it will be affected by the break
             // Call updateAndCheck from it to fix vertical stack of NoteBlocks
             // if belowBlock is not a NoteBlock we must ensure the above is not, if it is call updateAndCheck from block
             if (belowBlock.getType() == Material.NOTE_BLOCK) {
-                updateAndCheck(belowBlock.getLocation());
                 event.setCancelled(true);
+                updateAndCheck(belowBlock);
             } else if (aboveBlock.getType() == Material.NOTE_BLOCK) {
-                updateAndCheck(event.getBlock().getLocation());
                 event.setCancelled(true);
+                updateAndCheck(aboveBlock);
             }
-            if (event.getBlock().getType() == Material.NOTE_BLOCK) {
+            if (block.getType() == Material.NOTE_BLOCK) {
                 event.setCancelled(true);
-                event.getBlock().getState().update(true, false);
+                updateAndCheck(block);
             }
         }
 
@@ -109,39 +104,37 @@ public class NoteBlockMechanicListener implements Listener {
         public void onNoteblockPowered(final GenericGameEvent event) {
             Block block = event.getLocation().getBlock();
 
-        Location eLoc = block.getLocation();
-        if (!isLoaded(event.getLocation()) || !isLoaded(eLoc)) return;
+            Location eLoc = block.getLocation();
+            if (!isLoaded(event.getLocation()) || !isLoaded(eLoc)) return;
 
             // This GameEvent only exists in 1.19
             // If server is 1.18 check if its there and if not return
             // If 1.19 we can check if this event is fired
-        if (!VersionUtil.isSupportedVersionOrNewer("1.19")) return;
-        if (event.getEvent() != GameEvent.NOTE_BLOCK_PLAY) return;
-        if (block.getType() != Material.NOTE_BLOCK) return;
-        NoteBlock data = (NoteBlock) block.getBlockData().clone();
-        Bukkit.getScheduler().runTaskLater(OraxenPlugin.get(), () -> block.setBlockData(data, false), 1L);
+            if (!VersionUtil.atOrAbove("1.19")) return;
+            if (event.getEvent() != GameEvent.NOTE_BLOCK_PLAY) return;
+            if (block.getType() != Material.NOTE_BLOCK) return;
+            NoteBlock data = (NoteBlock) block.getBlockData().clone();
+            Bukkit.getScheduler().runTaskLater(OraxenPlugin.get(), () -> block.setBlockData(data, false), 1L);
         }
 
-        public void updateAndCheck(final Location loc) {
-            final Block block = loc.add(0, 1, 0).getBlock();
-            if (block.getType() == Material.NOTE_BLOCK)
-                block.getState().update(true, true);
-            final Location nextBlock = block.getLocation().add(0, 1, 0);
-            if (nextBlock.getBlock().getType() == Material.NOTE_BLOCK)
-                updateAndCheck(block.getLocation());
+        public void updateAndCheck(Block block) {
+            final Block blockAbove = block.getRelative(BlockFace.UP);
+            if (blockAbove.getType() == Material.NOTE_BLOCK)
+                blockAbove.getState().update(true, true);
+            Block nextBlock = blockAbove.getRelative(BlockFace.UP);
+            if (nextBlock.getType() == Material.NOTE_BLOCK) updateAndCheck(blockAbove);
         }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void callInteract(PlayerInteractEvent event) {
         Block block = event.getClickedBlock();
-        if (block == null) return;
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        if (block == null || (event.getAction() != Action.LEFT_CLICK_BLOCK && event.getAction() != Action.RIGHT_CLICK_BLOCK)) return;
         if (event.getClickedBlock().getType() != Material.NOTE_BLOCK) return;
         NoteBlockMechanic mechanic = OraxenBlocks.getNoteBlockMechanic(block);
         if (mechanic == null) return;
         if (!EventUtils.callEvent(new OraxenNoteBlockInteractEvent(mechanic, event.getPlayer(), event.getItem(), event.getHand(), block, event.getBlockFace())))
-            event.setCancelled(true);
+            event.setUseInteractedBlock(Event.Result.DENY);
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
@@ -216,23 +209,18 @@ public class NoteBlockMechanicListener implements Listener {
         EquipmentSlot hand = event.getHand();
         BlockFace blockFace = event.getBlockFace();
 
-        if (hand == null || event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null || block.getType() != Material.NOTE_BLOCK)
-            return;
+        if (hand == null || event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null || block.getType() != Material.NOTE_BLOCK) return;
         if (!player.isSneaking() && BlockHelpers.isInteractable(block)) return;
-
-        NoteBlockMechanic mechanic = OraxenBlocks.getNoteBlockMechanic(block);
-        if (mechanic == null || OraxenBlocks.isOraxenNoteBlock(item)) return;
-        if (mechanic.isDirectional() && !mechanic.getDirectional().isParentBlock())
-            mechanic = mechanic.getDirectional().getParentMechanic();
+        if (event.useInteractedBlock() == Event.Result.DENY || !OraxenBlocks.isOraxenNoteBlock(block)) return;
 
         event.setUseInteractedBlock(Event.Result.DENY);
-        if (!EventUtils.callEvent(new OraxenNoteBlockInteractEvent(mechanic, player, item, hand, block, blockFace))) event.setCancelled(true);
+        if (OraxenBlocks.isOraxenNoteBlock(item)) return;
         if (item == null) return;
 
         Material type = item.getType();
         if (type == Material.AIR) return;
 
-        BlockData newData = type != null && type.isBlock() ? type.createBlockData() : null;
+        BlockData newData = type.isBlock() ? type.createBlockData() : null;
         makePlayerPlaceBlock(player, event.getHand(), item, block, event.getBlockFace(), newData);
     }
 
@@ -250,7 +238,6 @@ public class NoteBlockMechanicListener implements Listener {
 
         // determines the new block data of the block
         int customVariation = mechanic.getCustomVariation();
-        boolean isFalling = mechanic.isFalling();
         BlockFace face = event.getBlockFace();
 
         if (mechanic.isDirectional()) {
@@ -281,13 +268,8 @@ public class NoteBlockMechanicListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBreakingCustomBlock(final BlockBreakEvent event) {
-        final Block block = event.getBlock();
-
-        NoteBlockMechanic mechanic = OraxenBlocks.getNoteBlockMechanic(block);
-        if (mechanic == null) return;
-        if (OraxenBlocks.remove(block.getLocation(), event.getPlayer())) {
+        if (OraxenBlocks.remove(event.getBlock().getLocation(), event.getPlayer()))
             event.setDropItems(false);
-        }
     }
 
     @EventHandler
@@ -335,11 +317,12 @@ public class NoteBlockMechanicListener implements Listener {
     public void onCatchFire(final BlockIgniteEvent event) {
         Block block = event.getBlock();
         NoteBlockMechanic mechanic = OraxenBlocks.getNoteBlockMechanic(block);
-        if (block.getType() != Material.NOTE_BLOCK || mechanic == null) return;
+        if (mechanic == null) return;
         if (!mechanic.canIgnite()) event.setCancelled(true);
-
-        block.getWorld().playSound(block.getLocation(), Sound.ITEM_FLINTANDSTEEL_USE, 1, 1);
-        block.getRelative(BlockFace.UP).setType(Material.FIRE);
+        else {
+            block.getWorld().playSound(block.getLocation(), Sound.ITEM_FLINTANDSTEEL_USE, 1, 1);
+            block.getRelative(BlockFace.UP).setType(Material.FIRE);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -379,6 +362,12 @@ public class NoteBlockMechanicListener implements Listener {
             }
             event.setCursor(item);
         }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void updateLightOnBlockBreak(BlockBreakEvent event) {
+        Block block = event.getBlock();
+        //if (!OraxenBlocks.isOraxenNoteBlock(block)) LightMechanic.refreshBlockLight(block);
     }
 
     //TODO Also trigger for attached blocks
@@ -449,29 +438,53 @@ public class NoteBlockMechanicListener implements Listener {
         }
 
         final NoteBlockMechanic againstMechanic = OraxenBlocks.getNoteBlockMechanic(placedAgainst);
-        final BlockPlaceEvent blockPlaceEvent = new BlockPlaceEvent(target, target.getState(), placedAgainst, item, player, true, hand);
-        if (againstMechanic != null && (againstMechanic.isStorage() || againstMechanic.hasClickActions()))
-            blockPlaceEvent.setCancelled(true);
-        if (BlockHelpers.isStandingInside(player, target) || !ProtectionLib.canBuild(player, target.getLocation()))
-            blockPlaceEvent.setCancelled(true);
-        if (!Range.between(target.getWorld().getMinHeight(), target.getWorld().getMaxHeight() - 1).contains(target.getY()))
-            blockPlaceEvent.setCancelled(true);
-        if (!EventUtils.callEvent(blockPlaceEvent) || !blockPlaceEvent.canBuild()) return;
+        // Store oldData incase event(s) is cancelled, set the target blockData
+        // newData might be null in some scenarios
+        final BlockData oldData = target.getBlockData();
+        if (newData != null) {
+            target.setBlockData(newData);
+            final BlockPlaceEvent blockPlaceEvent = new BlockPlaceEvent(target, target.getState(), placedAgainst, item, player, true, hand);
+
+            if (againstMechanic != null && (againstMechanic.isStorage() || againstMechanic.hasClickActions()))
+                blockPlaceEvent.setCancelled(true);
+            if (BlockHelpers.isStandingInside(player, target) || !ProtectionLib.canBuild(player, target.getLocation()))
+                blockPlaceEvent.setCancelled(true);
+            if (!Range.between(target.getWorld().getMinHeight(), target.getWorld().getMaxHeight() - 1).contains(target.getY()))
+                blockPlaceEvent.setCancelled(true);
+
+            // Call the event and check if it is cancelled, if so reset BlockData
+            if (!EventUtils.callEvent(blockPlaceEvent) || !blockPlaceEvent.canBuild()) {
+                target.setBlockData(oldData);
+                return;
+            }
+        }
 
         // This method is run for placing on custom blocks aswell, so this should not be called for vanilla blocks
         NoteBlockMechanic targetOraxen = OraxenBlocks.getNoteBlockMechanic(newData);
         if (targetOraxen != null) {
-            BlockData oldData = target.getBlockData();
+
             OraxenBlocks.place(targetOraxen.getItemID(), target.getLocation());
 
-            if (!EventUtils.callEvent(new OraxenNoteBlockPlaceEvent(targetOraxen, target, player, item, hand))) {
+            OraxenNoteBlockPlaceEvent oraxenPlaceEvent = new OraxenNoteBlockPlaceEvent(targetOraxen, target, player, item, hand);
+            if (!EventUtils.callEvent(oraxenPlaceEvent)) {
                 target.setBlockData(oldData);
                 return;
             }
 
+            if (targetOraxen.isFalling() && target.getRelative(BlockFace.DOWN).getType().isAir()) {
+                Location fallingLocation = BlockHelpers.toCenterBlockLocation(target.getLocation());
+                OraxenBlocks.remove(target.getLocation(), null);
+                target.getWorld().spawnFallingBlock(fallingLocation, newData);
+                handleFallingOraxenBlockAbove(target);
+            }
+
             if (player.getGameMode() != GameMode.CREATIVE) item.setAmount(item.getAmount() - 1);
             Utils.swingHand(player, hand);
-        } else BlockHelpers.correctAllBlockStates(placedAgainst, player, hand, face, item, newData);
+        } else {
+            target.setType(Material.AIR);
+            BlockHelpers.correctAllBlockStates(placedAgainst, player, hand, face, item, newData);
+        }
+        target.getWorld().sendGameEvent(null, GameEvent.BLOCK_PLACE, target.getLocation().toVector());
     }
 
     // Used to determine what instrument to use when playing a note depending on below block

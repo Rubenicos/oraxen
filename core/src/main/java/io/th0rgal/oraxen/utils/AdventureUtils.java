@@ -7,12 +7,12 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.Tag;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
-import net.kyori.adventure.text.serializer.ansi.ANSIComponentSerializer;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.translation.GlobalTranslator;
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Locale;
 
@@ -45,8 +45,6 @@ public class AdventureUtils {
 
     public static final PlainTextComponentSerializer PLAIN_TEXT = PlainTextComponentSerializer.plainText();
 
-    public static final ANSIComponentSerializer ANSI = ANSIComponentSerializer.ansi();
-
     /**
      * @param message The string to parse
      * @return The original string, serialized and deserialized through MiniMessage
@@ -55,8 +53,8 @@ public class AdventureUtils {
         return MINI_MESSAGE.serialize(MINI_MESSAGE.deserialize(message)).replaceAll("\\\\(?!u)(?!n)(?!\")", "");
     }
 
-    public static String parseMiniMessage(String message, TagResolver tagResolver) {
-        return MINI_MESSAGE.serialize(MINI_MESSAGE.deserialize(message, tagResolver)).replaceAll("\\\\(?!u)(?!n)(?!\")", "");
+    public static String parseMiniMessage(String message, @Nullable TagResolver tagResolver) {
+        return MINI_MESSAGE.serialize((tagResolver != null ? MINI_MESSAGE.deserialize(message, tagResolver) : MINI_MESSAGE.deserialize(message))).replaceAll("\\\\(?!u)(?!n)(?!\")", "");
     }
 
     public static String parseMiniMessage(String message, Player player) {

@@ -8,11 +8,12 @@ import com.ticxo.modelengine.api.model.ModeledEntity;
 import io.th0rgal.oraxen.OraxenPlugin;
 import io.th0rgal.oraxen.api.OraxenFurniture;
 import io.th0rgal.oraxen.api.OraxenItems;
-import io.th0rgal.oraxen.compatibilities.provided.lightapi.WrappedLightAPI;
+import io.th0rgal.oraxen.compatibilities.provided.blocklocker.BlockLockerMechanic;
 import io.th0rgal.oraxen.mechanics.Mechanic;
 import io.th0rgal.oraxen.mechanics.MechanicFactory;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.furniture.evolution.EvolvingFurniture;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.furniture.jukebox.JukeboxBlock;
+import io.th0rgal.oraxen.mechanics.provided.gameplay.light.LightMechanic;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.limitedplacing.LimitedPlacing;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.storage.StorageMechanic;
 import io.th0rgal.oraxen.utils.*;
@@ -34,7 +35,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 
-import java.security.Key;
 import java.util.*;
 
 public class FurnitureMechanic extends Mechanic {
@@ -61,7 +61,7 @@ public class FurnitureMechanic extends Mechanic {
     private boolean hasSeatYaw;
     private final Drop drop;
     private final EvolvingFurniture evolvingFurniture;
-    private final int light;
+    private final LightMechanic light;
     private final String modelEngineID;
     private final String placedItemId;
     private ItemStack placedItem;
@@ -72,6 +72,8 @@ public class FurnitureMechanic extends Mechanic {
     private final DisplayEntityProperties displayEntityProperties;
     private final FurnitureHitbox hitbox;
     private final boolean isRotatable;
+
+    private final BlockLockerMechanic blockLocker;
 
     public record FurnitureHitbox(float width, float height) {
     }
@@ -105,7 +107,7 @@ public class FurnitureMechanic extends Mechanic {
         modelEngineID = section.getString("modelengine_id", null);
         farmlandRequired = section.getBoolean("farmland_required", false);
         farmblockRequired = section.getBoolean("farmblock_required", false);
-        light = Math.min(section.getInt("light", -1), 15);
+        light = new LightMechanic(section);
 
         try {
             String defaultEntityType;
@@ -192,6 +194,9 @@ public class FurnitureMechanic extends Mechanic {
                 isRotatable = false;
             } else isRotatable = true;
         } else isRotatable = false;
+
+        ConfigurationSection blockLockerSection = section.getConfigurationSection("blocklocker");
+        blockLocker = blockLockerSection != null ? new BlockLockerMechanic(blockLockerSection) : null;
     }
 
     public boolean isModelEngine() {
@@ -340,17 +345,17 @@ public class FurnitureMechanic extends Mechanic {
 
     public Entity place(Location location) {
         setPlacedItem();
-        return place(location, placedItem, 0f, BlockFace.NORTH);
+        return place(location, placedItem, 0f, BlockFace.NORTH, true);
     }
 
-    public Entity place(Location location, float yaw, BlockFace facing) {
+    public Entity place(Location location, Float yaw, BlockFace facing) {
         setPlacedItem();
-        return place(location, placedItem, yaw, facing);
+        return place(location, placedItem, yaw, facing, true);
     }
 
-    public Entity place(Location location, ItemStack originalItem, Float yaw, BlockFace facing) {
+    public Entity place(Location location, ItemStack originalItem, Float yaw, BlockFace facing, boolean checkSpace) {
         if (!location.isWorldLoaded()) return null;
-        if (this.notEnoughSpace(yaw, location)) return null;
+        if (checkSpace && this.notEnoughSpace(yaw, location)) return null;
         assert location.getWorld() != null;
         setPlacedItem();
         assert location.getWorld() != null;
@@ -364,30 +369,39 @@ public class FurnitureMechanic extends Mechanic {
         } else item = placedItem;
         item.setAmount(1);
 
-        Entity baseEntity = EntityUtils.spawnEntity(correctedSpawnLocation(location), entityClass, (e) -> setEntityData(e, yaw, item, facing));
-        if (this.isModelEngine() && Bukkit.getPluginManager().isPluginEnabled("ModelEngine")) {
+        Entity baseEntity = EntityUtils.spawnEntity(correctedSpawnLocation(location, facing), entityClass, (e) -> setEntityData(e, yaw, item, facing));
+        if (this.isModelEngine() && PluginUtils.isEnabled("ModelEngine")) {
             spawnModelEngineFurniture(baseEntity);
         }
 
         return baseEntity;
     }
 
-    //TODO Account for limitedPlacing differences
-    private Location correctedSpawnLocation(Location baseLocation) {
+    private Location correctedSpawnLocation(Location baseLocation, BlockFace facing) {
         Location correctedLocation = BlockHelpers.toCenterBlockLocation(baseLocation);
+        boolean isWall = hasLimitedPlacing() && limitedPlacing.isWall();
+        boolean isRoof = hasLimitedPlacing() && limitedPlacing.isRoof();
+        boolean isFixed = hasDisplayEntityProperties() && displayEntityProperties.getDisplayTransform() == ItemDisplay.ItemDisplayTransform.FIXED;
         if (furnitureType != FurnitureType.DISPLAY_ENTITY || !hasDisplayEntityProperties()) return correctedLocation;
-        if (displayEntityProperties.getDisplayTransform() != ItemDisplay.ItemDisplayTransform.NONE) return correctedLocation;
+        if (displayEntityProperties.getDisplayTransform() != ItemDisplay.ItemDisplayTransform.NONE && !isWall && !isRoof) return correctedLocation;
         float scale = displayEntityProperties.hasScale() ? displayEntityProperties.getScale().y() : 1;
-        return correctedLocation.add(0, 0.5 * scale, 0);
+        // Since roof-furniture need to be more or less flipped, we have to add 0.5 (0.49 or it is "inside" the block above) to the Y coordinate
+        if (isFixed && isWall) correctedLocation.add(-facing.getModX() * (0.49 * scale), 0, -facing.getModZ() * (0.49 * scale));
+        float heightCorrection = (hasHitbox() ? hitbox.height : 1) - 1;
+        return correctedLocation.add(0, (0.5 * scale) + (isRoof ? isFixed ? 0.49 : -1 * heightCorrection : 0), 0);
     }
 
-    private void setEntityData(Entity entity, float yaw, ItemStack item, BlockFace facing) {
+    public void setEntityData(Entity entity, float yaw, BlockFace facing) {
+        setEntityData(entity, yaw, getFurnitureItem(entity), facing);
+    }
+
+    public void setEntityData(Entity entity, float yaw, ItemStack item, BlockFace facing) {
         setBaseFurnitureData(entity);
         Location location = entity.getLocation();
         if (entity instanceof ItemFrame frame) {
             setFrameData(frame, item, yaw, facing);
 
-            if (hasBarriers()) setBarrierHitbox(entity, location, yaw, true);
+            if (hasBarriers()) setBarrierHitbox(entity, location, yaw);
             else {
                 float width = hasHitbox() ? hitbox.width : 1f;
                 float height = hasHitbox() ? hitbox.height : 1f;
@@ -399,30 +413,36 @@ public class FurnitureMechanic extends Mechanic {
                     interaction.getPersistentDataContainer().set(SEAT_KEY, DataType.UUID, seatUuid);
                     frame.getPersistentDataContainer().set(SEAT_KEY, DataType.UUID, seatUuid);
                 }
-                if (light != -1) {
-                    WrappedLightAPI.createBlockLight(location, light);
-                }
+                if (light.hasLightLevel()) light.createBlockLight(block);
             }
         } else if (entity instanceof ItemDisplay itemDisplay) {
             setItemDisplayData(itemDisplay, item, yaw, displayEntityProperties);
             float width = hasHitbox() ? hitbox.width : displayEntityProperties.getDisplayWidth();
             float height = hasHitbox() ? hitbox.height : displayEntityProperties.getDisplayHeight();
-            Interaction interaction = spawnInteractionEntity(itemDisplay, location, width, height);
+            boolean isFixed = displayEntityProperties.getDisplayTransform() == ItemDisplay.ItemDisplayTransform.FIXED;
+            Location interactionLoc = location.clone().subtract(0, (hasLimitedPlacing() && limitedPlacing.isRoof() && isFixed) ? 1.5 * (height - 1) : 0, 0);
+            Interaction interaction = spawnInteractionEntity(itemDisplay, interactionLoc, width, height);
             Location barrierLoc = EntityUtils.isNone(itemDisplay) && displayEntityProperties.hasScale()
                             ? location.clone().subtract(0, 0.5 * displayEntityProperties.getScale().y(), 0) : location;
 
-            if (hasBarriers()) setBarrierHitbox(entity, barrierLoc, yaw, false);
+            if (hasBarriers()) setBarrierHitbox(entity, barrierLoc, yaw);
             else if (hasSeat() && interaction != null) {
                 UUID seatUuid = spawnSeat(location.getBlock(), hasSeatYaw ? seatYaw : yaw);
                 interaction.getPersistentDataContainer().set(SEAT_KEY, DataType.UUID, seatUuid);
                 itemDisplay.getPersistentDataContainer().set(SEAT_KEY, DataType.UUID, seatUuid);
             }
-            if (light != -1) WrappedLightAPI.createBlockLight(location, light);
+            if (light.hasLightLevel()) light.createBlockLight(location.getBlock());
         }
     }
 
     private Interaction spawnInteractionEntity(Entity entity, Location location, float width, float height) {
         if (!OraxenPlugin.supportsDisplayEntities || width <= 0f || height <= 0f) return null;
+        UUID existingInteractionUUID = entity.getPersistentDataContainer().get(INTERACTION_KEY, DataType.UUID);
+        if (existingInteractionUUID != null) {
+            Entity existingInteraction = Bukkit.getEntity(existingInteractionUUID);
+            if (existingInteraction instanceof Interaction interaction) return interaction;
+        }
+
         Interaction interaction = EntityUtils.spawnEntity(BlockHelpers.toCenterBlockLocation(location), Interaction.class, (i) -> {
             i.setInteractionWidth(width);
             i.setInteractionHeight(height);
@@ -460,7 +480,6 @@ public class FurnitureMechanic extends Mechanic {
         if (properties.hasShadowStrength()) itemDisplay.setShadowStrength(properties.getShadowStrength());
         //if (properties.hasGlowColor()) itemDisplay.setGlowColorOverride(properties.getGlowColor());
         if (properties.hasBrightness()) itemDisplay.setBrightness(displayEntityProperties.getBrightness());
-        else if (light != -1) itemDisplay.setBrightness(new Display.Brightness(light, 0));
 
         itemDisplay.setDisplayWidth(properties.getDisplayWidth());
         itemDisplay.setDisplayHeight(properties.getDisplayHeight());
@@ -476,16 +495,18 @@ public class FurnitureMechanic extends Mechanic {
         // since FIXED is meant to mimic ItemFrames, we rotate it to match the ItemFrame's rotation
         // 1.20 Fixes this, will break for 1.19.4 but added disclaimer in console
         float pitch;
-        float alterYaw;
-        if (VersionUtil.isSupportedVersionOrNewer("1.20.1")) {
-            pitch = isFixed && hasLimitedPlacing() && (limitedPlacing.isFloor() || limitedPlacing.isRoof()) ? -90 : 0;
-            alterYaw = yaw;
-        } else {
-            pitch = isFixed && hasLimitedPlacing() ? limitedPlacing.isFloor() ? 90 : limitedPlacing.isWall() ? 0 : limitedPlacing.isRoof() ? -90 : 0 : 0;
-            alterYaw = yaw - 180;
+        yaw = (VersionUtil.atOrAbove("1.20.1") && (!hasLimitedPlacing() || !limitedPlacing.isRoof() || !isFixed)) ? yaw : yaw - 180;
+        if (VersionUtil.atOrAbove("1.20.1")) {
+            if (hasLimitedPlacing() && isFixed)
+                if (limitedPlacing.isFloor()) pitch = -90;
+                else if (limitedPlacing.isRoof()) pitch = 90;
+                else pitch = 0;
+            else pitch = 0;
         }
+        else pitch = isFixed && hasLimitedPlacing() ? limitedPlacing.isFloor() ? 90 : limitedPlacing.isWall() ? 0 : limitedPlacing.isRoof() ? -90 : 0 : 0;
+
         itemDisplay.setTransformation(transform);
-        itemDisplay.setRotation(alterYaw, pitch);
+        itemDisplay.setRotation(yaw, pitch);
     }
 
     private void setFrameData(ItemFrame frame, ItemStack item, float yaw, BlockFace facing) {
@@ -505,7 +526,7 @@ public class FurnitureMechanic extends Mechanic {
         }
     }
 
-    private void setBarrierHitbox(Entity entity, Location location, float yaw, boolean handleLight) {
+    private void setBarrierHitbox(Entity entity, Location location, float yaw) {
         List<Location> barrierLocations = getLocations(yaw, BlockHelpers.toCenterBlockLocation(location), barriers);
         for (Location barrierLocation : barrierLocations) {
             Block block = barrierLocation.getBlock();
@@ -516,8 +537,7 @@ public class FurnitureMechanic extends Mechanic {
             data.set(ROOT_KEY, PersistentDataType.STRING, new BlockLocation(location.clone()).toString());
             data.set(ORIENTATION_KEY, PersistentDataType.FLOAT, yaw);
             data.set(BASE_ENTITY_KEY, DataType.UUID, entity.getUniqueId());
-            if (handleLight && light != -1)
-                WrappedLightAPI.createBlockLight(barrierLocation, light);
+            if (light.hasLightLevel()) light.createBlockLight(block);
         }
     }
 
@@ -554,13 +574,14 @@ public class FurnitureMechanic extends Mechanic {
         List<Location> barrierLocations = getLocations(orientation, rootLocation, blockLocations.isEmpty() ? getBarriers() : blockLocations);
 
         for (Location location : barrierLocations) {
-            if (light != -1) WrappedLightAPI.removeBlockLight(location);
+            Block block = location.getBlock();
             if (hasSeat) removeFurnitureSeat(location);
-            if (location.getBlock().getType() != Material.BARRIER) continue;
-            if (!BlockHelpers.getPDC(location.getBlock()).getOrDefault(BASE_ENTITY_KEY, DataType.UUID, UUID.randomUUID()).equals(baseEntity.getUniqueId())) continue;
+            if (block.getType() != Material.BARRIER) continue;
+            if (!BlockHelpers.getPDC(block).getOrDefault(BASE_ENTITY_KEY, DataType.UUID, UUID.randomUUID()).equals(baseEntity.getUniqueId())) continue;
 
-            location.getBlock().setType(Material.AIR);
+            block.setType(Material.AIR);
             new CustomBlockData(location.getBlock(), OraxenPlugin.get()).clear();
+            if (light.hasLightLevel()) light.removeBlockLight(block);
         }
         removeBaseEntity(baseEntity);
     }
@@ -572,12 +593,12 @@ public class FurnitureMechanic extends Mechanic {
     private void removeBaseEntity(Entity baseEntity) {
         if (baseEntity == null) return;
         removeSubEntitiesOfFurniture(baseEntity);
-        if (light != -1) WrappedLightAPI.removeBlockLight(baseEntity.getLocation());
+        if (light.hasLightLevel()) light.removeBlockLight(baseEntity.getLocation().getBlock());
         if (!baseEntity.isDead()) baseEntity.remove();
     }
 
     private void removeSubEntitiesOfFurniture(Entity baseEntity) {
-        if (light != -1) WrappedLightAPI.removeBlockLight(baseEntity.getLocation());
+        if (light.hasLightLevel()) light.removeBlockLight(baseEntity.getLocation().getBlock());
         if (hasSeat) removeFurnitureSeat(baseEntity.getLocation());
 
         if (OraxenPlugin.supportsDisplayEntities) {
@@ -612,7 +633,8 @@ public class FurnitureMechanic extends Mechanic {
         if (mechanic == null) return entity.getLocation().getYaw();
 
         if (entity instanceof ItemFrame itemFrame) {
-            if (mechanic.limitedPlacing.isWall() && itemFrame.getFacing().getModY() == 0) return entity.getLocation().getYaw();
+            if (mechanic.hasLimitedPlacing() && mechanic.limitedPlacing.isWall() && itemFrame.getFacing().getModY() == 0)
+                return entity.getLocation().getYaw();
             else return rotationToYaw(itemFrame.getRotation());
         } else return entity.getLocation().getYaw();
     }
@@ -810,5 +832,17 @@ public class FurnitureMechanic extends Mechanic {
         Rotation newRotation = FurnitureMechanic.yawToRotation(yaw).rotateClockwise();
         if (baseEntity instanceof ItemFrame frame) frame.setRotation(newRotation);
         else baseEntity.setRotation(FurnitureMechanic.rotationToYaw(newRotation), baseEntity.getLocation().getPitch());
+    }
+
+    public BlockLockerMechanic getBlockLocker() {
+        return blockLocker;
+    }
+
+    public boolean hasLight() {
+        return light.hasLightLevel();
+    }
+
+    public LightMechanic getLight() {
+        return light;
     }
 }

@@ -18,6 +18,7 @@ import io.th0rgal.oraxen.hud.HudManager;
 import io.th0rgal.oraxen.items.ItemUpdater;
 import io.th0rgal.oraxen.mechanics.MechanicsManager;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.furniture.FurnitureFactory;
+import io.th0rgal.oraxen.nms.GlyphHandlers;
 import io.th0rgal.oraxen.nms.NMSHandlers;
 import io.th0rgal.oraxen.pack.generation.ResourcePack;
 import io.th0rgal.oraxen.pack.upload.UploadManager;
@@ -89,10 +90,10 @@ public class OraxenPlugin extends JavaPlugin {
     public void onEnable() {
         CommandAPI.onEnable();
         ProtectionLib.init(this);
-        if (!VersionUtil.isSupportedVersionOrNewer("1.20.3")) PlayerAnimatorImpl.initialize(this);
+        if (!VersionUtil.atOrAbove("1.20.3")) PlayerAnimatorImpl.initialize(this);
         audience = BukkitAudiences.create(this);
         clickActionManager = new ClickActionManager(this);
-        supportsDisplayEntities = VersionUtil.isSupportedVersionOrNewer("1.19.4");
+        supportsDisplayEntities = VersionUtil.atOrAbove("1.19.4");
         reloadConfigs();
 
         if (Settings.KEEP_UP_TO_DATE.toBool())
@@ -115,7 +116,7 @@ public class OraxenPlugin extends JavaPlugin {
         hudManager = new HudManager(configsManager);
         fontManager = new FontManager(configsManager);
         soundManager = new SoundManager(configsManager.getSound());
-        if (!VersionUtil.isSupportedVersionOrNewer("1.20.3")) gestureManager = new GestureManager();
+        if (!VersionUtil.atOrAbove("1.20.3")) gestureManager = new GestureManager();
         OraxenItems.loadItems();
         fontManager.registerEvents();
         fontManager.verifyRequired(); // Verify the required glyph is there
@@ -149,8 +150,7 @@ public class OraxenPlugin extends JavaPlugin {
         unregisterListeners();
         FurnitureFactory.unregisterEvolution();
         for (Player player : Bukkit.getOnlinePlayers())
-            if (NMSHandlers.getHandler() != null && Settings.NMS_GLYPHS.toBool())
-                NMSHandlers.getHandler().uninject(player);
+            if (GlyphHandlers.isNms()) NMSHandlers.getHandler().uninject(player);
 
         CompatibilitiesManager.disableCompatibilities();
         Message.PLUGIN_UNLOADED.log();
