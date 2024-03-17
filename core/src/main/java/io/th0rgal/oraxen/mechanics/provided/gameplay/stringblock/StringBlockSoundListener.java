@@ -80,13 +80,11 @@ public class StringBlockSoundListener implements Listener {
             sound = blockSounds.getStepSound();
             volume = blockSounds.getStepVolume();
             pitch = blockSounds.getStepPitch();
-        }
-        else if (gameEvent == GameEvent.HIT_GROUND && blockSounds.hasStepSound()) {
+        } else if (gameEvent == GameEvent.HIT_GROUND && blockSounds.hasStepSound()) {
             sound = blockSounds.getFallSound();
             volume = blockSounds.getFallVolume();
             pitch = blockSounds.getFallPitch();
-        }
-        else return;
+        } else return;
         BlockHelpers.playCustomBlockSound(entity.getLocation(), sound, SoundCategory.PLAYERS, volume, pitch);
     }
 
