@@ -273,7 +273,16 @@ public class NoteBlockMechanicListener implements Listener {
     }
 
     @EventHandler
-    public void onExplosionDestroy(EntityExplodeEvent event) {
+    public void onEntityExplosion(EntityExplodeEvent event) {
+        for (Block block : new HashSet<>(event.blockList())) {
+            if (!OraxenBlocks.isOraxenNoteBlock(block)) continue;
+            OraxenBlocks.remove(block.getLocation(), null);
+            event.blockList().remove(block);
+        }
+    }
+
+    @EventHandler
+    public void onBlockExplosion(BlockExplodeEvent event) {
         for (Block block : new HashSet<>(event.blockList())) {
             if (!OraxenBlocks.isOraxenNoteBlock(block)) continue;
             OraxenBlocks.remove(block.getLocation(), null);
@@ -432,10 +441,7 @@ public class NoteBlockMechanicListener implements Listener {
         final Material type = placedAgainst.getType();
 
         if (BlockHelpers.isReplaceable(type)) target = placedAgainst;
-        else {
-            target = placedAgainst.getRelative(face);
-            if (!BlockHelpers.isReplaceable(target.getType())) return;
-        }
+        else target = placedAgainst.getRelative(face);
 
         final NoteBlockMechanic againstMechanic = OraxenBlocks.getNoteBlockMechanic(placedAgainst);
         // Store oldData incase event(s) is cancelled, set the target blockData
@@ -444,12 +450,17 @@ public class NoteBlockMechanicListener implements Listener {
         if (newData != null) {
             target.setBlockData(newData);
             final BlockPlaceEvent blockPlaceEvent = new BlockPlaceEvent(target, target.getState(), placedAgainst, item, player, true, hand);
+            final Material material = newData.getMaterial();
 
             if (againstMechanic != null && (againstMechanic.isStorage() || againstMechanic.hasClickActions()))
                 blockPlaceEvent.setCancelled(true);
             if (BlockHelpers.isStandingInside(player, target) || !ProtectionLib.canBuild(player, target.getLocation()))
                 blockPlaceEvent.setCancelled(true);
             if (!Range.between(target.getWorld().getMinHeight(), target.getWorld().getMaxHeight() - 1).contains(target.getY()))
+                blockPlaceEvent.setCancelled(true);
+            if (Tag.WOODEN_DOORS.isTagged(material) && (!target.canPlace(newData) || !target.getRelative(BlockFace.UP).isEmpty()))
+                blockPlaceEvent.setCancelled(true);
+            if (Tag.WOODEN_PRESSURE_PLATES.isTagged(material) && !target.canPlace(newData))
                 blockPlaceEvent.setCancelled(true);
 
             // Call the event and check if it is cancelled, if so reset BlockData
@@ -474,17 +485,18 @@ public class NoteBlockMechanicListener implements Listener {
             if (targetOraxen.isFalling() && target.getRelative(BlockFace.DOWN).getType().isAir()) {
                 Location fallingLocation = BlockHelpers.toCenterBlockLocation(target.getLocation());
                 OraxenBlocks.remove(target.getLocation(), null);
-                target.getWorld().spawnFallingBlock(fallingLocation, newData);
+                if(fallingLocation.getNearbyEntitiesByType(FallingBlock.class, 0.25).isEmpty())
+                    target.getWorld().spawnFallingBlock(fallingLocation, newData);
                 handleFallingOraxenBlockAbove(target);
             }
 
             if (player.getGameMode() != GameMode.CREATIVE) item.setAmount(item.getAmount() - 1);
             Utils.swingHand(player, hand);
         } else {
-            target.setType(Material.AIR);
+            target.setBlockData(oldData);
             BlockHelpers.correctAllBlockStates(placedAgainst, player, hand, face, item, newData);
         }
-        target.getWorld().sendGameEvent(player, GameEvent.BLOCK_PLACE, target.getLocation().toVector());
+        if (VersionUtil.isPaperServer()) target.getWorld().sendGameEvent(player, GameEvent.BLOCK_PLACE, target.getLocation().toVector());
     }
 
     // Used to determine what instrument to use when playing a note depending on below block
