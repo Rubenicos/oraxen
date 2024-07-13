@@ -5,7 +5,6 @@ import com.google.gson.*;
 import io.th0rgal.oraxen.OraxenPlugin;
 import io.th0rgal.oraxen.api.OraxenItems;
 import io.th0rgal.oraxen.api.events.OraxenPackGeneratedEvent;
-import io.th0rgal.oraxen.config.Message;
 import io.th0rgal.oraxen.config.ResourcesManager;
 import io.th0rgal.oraxen.config.Settings;
 import io.th0rgal.oraxen.font.Font;
@@ -463,6 +462,7 @@ public class ResourcePack {
 
     private void generateGestureFiles() {
         GestureManager gestureManager = OraxenPlugin.get().getGesturesManager();
+        if (gestureManager == null) return;
         for (Map.Entry<String, String> entry : gestureManager.getPlayerHeadJsons().entrySet())
             writeStringToVirtual(StringUtils.removeEnd(Utils.getParentDirs(entry.getKey()), "/"), Utils.removeParentDirs(entry.getKey()), entry.getValue());
         writeStringToVirtual("assets/minecraft/models/item", "player_head.json", gestureManager.getSkullJson());
@@ -549,8 +549,7 @@ public class ResourcePack {
     private InputStream processJsonFile(File file) throws IOException {
         InputStream newStream;
         String content;
-        if (!file.exists())
-            return new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8));
+        if (!file.exists()) return new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8));
         try {
             content = Files.readString(file.toPath(), StandardCharsets.UTF_8);
         } catch (IOException | NullPointerException e) {
@@ -570,18 +569,12 @@ public class ResourcePack {
     }
 
     private InputStream processJson(String content) {
-        InputStream newStream;
-        // Deserialize said component to a string to handle other tags like glyphs
-        String parsedContent = AdventureUtils.parseMiniMessage(AdventureUtils.parseLegacy(content), AdventureUtils.tagResolver("prefix", Message.PREFIX.toString()));
-        // Deserialize adventure component to legacy format due to resourcepacks not supporting adventure components
-        parsedContent = AdventureUtils.parseLegacyThroughMiniMessage(content);
-        newStream = new ByteArrayInputStream(parsedContent.getBytes(StandardCharsets.UTF_8));
-        try {
-            newStream.close();
+        String parsedContent = AdventureUtils.parseLegacyThroughMiniMessage(content).replace("\\<", "<");
+        try (InputStream newStream = new ByteArrayInputStream(parsedContent.getBytes(StandardCharsets.UTF_8))) {
+            return newStream;
         } catch (IOException e) {
             return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
         }
-        return newStream;
     }
 
     private String getZipFilePath(String path, String newFolder) throws IOException {

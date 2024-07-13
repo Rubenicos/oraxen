@@ -11,10 +11,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
-import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 
+@Deprecated(forRemoval = true, since = "1.20.6")
 public class FoodMechanicListener implements Listener {
     private final FoodMechanicFactory factory;
 
@@ -45,8 +45,9 @@ public class FoodMechanicListener implements Listener {
             event.setCancelled(true);
 
             if (player.getGameMode() != GameMode.CREATIVE) {
-                ItemStack itemInHand = (event.getHand() == EquipmentSlot.HAND ? inventory.getItemInMainHand() : inventory.getItemInOffHand());
+                ItemStack itemInHand = player.getInventory().getItem(event.getHand());
                 ItemUtils.subtract(itemInHand, 1);
+                if (mechanic.hasReplacement()) inventory.addItem(mechanic.getReplacement());
 
 
                 if (mechanic.hasEffects() && Math.random() <= mechanic.getEffectProbability())
@@ -55,10 +56,7 @@ public class FoodMechanicListener implements Listener {
 
             player.setFoodLevel(player.getFoodLevel() + Math.min(mechanic.getHunger(), 20));
             player.setSaturation(player.getSaturation() + Math.min(mechanic.getSaturation(), 20));
-        }/* else {
-            if (itemStack.hasItemMeta() && itemStack.getItemMeta().hasFood() && player.getGameMode() != GameMode.CREATIVE && mechanic.hasReplacement())
-                inventory.addItem(mechanic.getReplacement());
-        }*/
+        }
 
 
     }
