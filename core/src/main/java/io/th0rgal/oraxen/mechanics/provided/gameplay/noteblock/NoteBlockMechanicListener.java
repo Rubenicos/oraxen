@@ -269,8 +269,12 @@ public class NoteBlockMechanicListener implements Listener {
         OraxenBlocks.remove(event.getBlock().getLocation(), event.getPlayer());
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityExplosion(EntityExplodeEvent event) {
+        if (VersionUtil.atOrAbove("1.21")) {
+            ExplosionResult result = event.getExplosionResult();
+            if (result != ExplosionResult.DESTROY && result != ExplosionResult.DESTROY_WITH_DECAY) return;
+        }
         for (Block block : new HashSet<>(event.blockList())) {
             if (!OraxenBlocks.isOraxenNoteBlock(block)) continue;
             OraxenBlocks.remove(block.getLocation(), null);
@@ -278,8 +282,12 @@ public class NoteBlockMechanicListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockExplosion(BlockExplodeEvent event) {
+        if (VersionUtil.atOrAbove("1.21")) {
+            ExplosionResult result = event.getExplosionResult();
+            if (result != ExplosionResult.DESTROY && result != ExplosionResult.DESTROY_WITH_DECAY) return;
+        }
         for (Block block : new HashSet<>(event.blockList())) {
             if (!OraxenBlocks.isOraxenNoteBlock(block)) continue;
             OraxenBlocks.remove(block.getLocation(), null);

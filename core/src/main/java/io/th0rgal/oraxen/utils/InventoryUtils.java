@@ -5,26 +5,44 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 
 import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
 
 public class InventoryUtils {
 
-    private static final Map<String, Method> methodCache = new HashMap<>();
+    private static Method getTitleMethod;
+    private static Method titleMethod;
+    private static Method topInventoryMethod;
+    private static Method playerFromViewMethod;
+
+    static {
+        try {
+            getTitleMethod = InventoryView.class.getDeclaredMethod("getTitle");
+        } catch (Exception e) {
+
+        }
+        try {
+            titleMethod = InventoryView.class.getDeclaredMethod("title");
+        } catch (Exception e) {
+
+        }
+        try {
+            topInventoryMethod = InventoryView.class.getDeclaredMethod("getTopInventory");
+        } catch (Exception e) {
+
+        }
+        try {
+            playerFromViewMethod = InventoryView.class.getDeclaredMethod("getPlayer");
+        } catch (Exception e) {
+
+        }
+    }
 
     public static Component titleFromView(InventoryEvent event) {
-        Object view = event.getView();
+        if (VersionUtil.atOrAbove("1.21")) return event.getView().title();
         try {
-            return (Component) methodCache.computeIfAbsent("title", (title) -> {
-                try {
-                    return view.getClass().getMethod(title);
-                } catch (NoSuchMethodException e) {
-                    if (Settings.DEBUG.toBool()) e.printStackTrace();
-                    return null;
-                }
-            }).invoke(view);
+            return (Component) titleMethod.invoke(event.getView());
         } catch (Exception e) {
             if (Settings.DEBUG.toBool()) e.printStackTrace();
             return Component.empty();
@@ -32,16 +50,9 @@ public class InventoryUtils {
     }
 
     public static Player playerFromView(InventoryEvent event) {
-        Object view = event.getView();
+        if (VersionUtil.atOrAbove("1.21")) return (Player) event.getView().getPlayer();
         try {
-            return (Player) methodCache.computeIfAbsent("getPlayer", (player) -> {
-                try {
-                    return view.getClass().getMethod(player);
-                } catch (NoSuchMethodException e) {
-                    if (Settings.DEBUG.toBool()) e.printStackTrace();
-                    return null;
-                }
-            }).invoke(view);
+            return (Player) playerFromViewMethod.invoke(event.getView());
         } catch (Exception e) {
             if (Settings.DEBUG.toBool()) e.printStackTrace();
             return null;
@@ -49,16 +60,9 @@ public class InventoryUtils {
     }
 
     public static String getTitleFromView(InventoryEvent event) {
-        Object view = event.getView();
+        if (VersionUtil.atOrAbove("1.21")) return event.getView().getTitle();
         try {
-            return (String) methodCache.computeIfAbsent("getTitle", (title) -> {
-                try {
-                    return view.getClass().getMethod(title);
-                } catch (NoSuchMethodException e) {
-                    if (Settings.DEBUG.toBool()) e.printStackTrace();
-                    return null;
-                }
-            }).invoke(view);
+            return (String) getTitleMethod.invoke(event.getView());
         } catch (Exception e) {
             if (Settings.DEBUG.toBool()) e.printStackTrace();
             return "";
@@ -66,16 +70,9 @@ public class InventoryUtils {
     }
 
     public static Inventory topInventoryForPlayer(Player player) {
-        Object view = player.getOpenInventory();
+        if (VersionUtil.atOrAbove("1.21")) return player.getOpenInventory().getTopInventory();
         try {
-            return (Inventory) methodCache.computeIfAbsent("getTopInventory", (topInv) -> {
-                try {
-                    return view.getClass().getMethod(topInv);
-                } catch (NoSuchMethodException e) {
-                    if (Settings.DEBUG.toBool()) e.printStackTrace();
-                    return null;
-                }
-            }).invoke(view);
+            return (Inventory) topInventoryMethod.invoke(player);
         } catch (Exception e) {
             if (Settings.DEBUG.toBool()) e.printStackTrace();
             return player.getInventory();
