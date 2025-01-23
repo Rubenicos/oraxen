@@ -6,11 +6,10 @@ import kotlin.io.path.listDirectoryEntries
 
 plugins {
     id("java")
-    //id("com.github.johnrengelman.shadow") version "8.1.1"
     id("xyz.jpenilla.run-paper") version "2.3.1"
     id("net.minecrell.plugin-yml.bukkit") version "0.6.0" // Generates plugin.yml
-    id("io.papermc.paperweight.userdev") version "1.7.4" apply false
-    id("com.gradleup.shadow") version "8.3.5"
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.14" apply false
+    id("com.gradleup.shadow") version "8.3.0"
     alias(libs.plugins.mia.publication)
 }
 
@@ -36,7 +35,7 @@ val devPluginPath = project.findProperty("oraxen_dev_plugin_path")?.toString()
 val foliaPluginPath = project.findProperty("oraxen_folia_plugin_path")?.toString()
 val spigotPluginPath = project.findProperty("oraxen_spigot_plugin_path")?.toString()
 val pluginVersion: String by project
-val commandApiVersion = "9.6.1"
+val commandApiVersion = "9.7.0"
 val adventureVersion = "4.17.0"
 val platformVersion = "4.3.4"
 val googleGsonVersion = "2.10.1"

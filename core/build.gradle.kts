@@ -1,6 +1,6 @@
 plugins {
     id("java")
-    //id("io.papermc.paperweight.userdev") version "1.6.0"
+    //id("io.papermc.paperweight.userdev")
     id("maven-publish")
     id("com.gradleup.shadow")
     id("org.ajoberstar.grgit.service") version "5.2.0"
