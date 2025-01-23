@@ -50,12 +50,13 @@ public class StringBlockMechanicFactory extends MechanicFactory {
 
         // this modifier should be executed when all the items have been parsed, just
         // before zipping the pack
-        OraxenPlugin.get().getResourcePack().addModifiers(getMechanicID(),
-                packFolder ->
-                        OraxenPlugin.get().getResourcePack()
-                                .writeStringToVirtual("assets/minecraft/blockstates",
-                                        "tripwire.json", getBlockstateContent())
-        );
+        OraxenPlugin.get().resourcePack(pack -> {
+            pack.addModifiers(getMechanicID(),
+                    packFolder ->
+                            pack.writeStringToVirtual("assets/minecraft/blockstates",
+                                            "tripwire.json", getBlockstateContent())
+            );
+        });
         MechanicsManager.registerListeners(OraxenPlugin.get(), getMechanicID(), new StringBlockMechanicListener(), new SaplingListener());
         if (customSounds) MechanicsManager.registerListeners(OraxenPlugin.get(), getMechanicID(), new StringBlockSoundListener());
 

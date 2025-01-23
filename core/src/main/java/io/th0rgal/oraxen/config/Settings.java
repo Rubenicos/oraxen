@@ -173,6 +173,10 @@ public enum Settings {
         return (String) getValue();
     }
 
+    public Integer toInt() {
+        return (Integer) getValue();
+    }
+
     public Component toComponent() {
         return AdventureUtils.MINI_MESSAGE.deserialize(getValue().toString());
     }

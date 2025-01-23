@@ -17,6 +17,7 @@ import io.th0rgal.oraxen.mechanics.MechanicsManager;
 import io.th0rgal.oraxen.mechanics.provided.gameplay.furniture.FurnitureFactory;
 import io.th0rgal.oraxen.nms.GlyphHandlers;
 import io.th0rgal.oraxen.nms.NMSHandlers;
+import io.th0rgal.oraxen.pack.dispatch.PackSender;
 import io.th0rgal.oraxen.pack.generation.ResourcePack;
 import io.th0rgal.oraxen.pack.upload.UploadManager;
 import io.th0rgal.oraxen.recipes.RecipesManager;
@@ -33,14 +34,22 @@ import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
 import java.util.jar.JarFile;
 
-public class OraxenPlugin extends JavaPlugin {
+public class OraxenPlugin extends JavaPlugin implements Listener {
 
     private static OraxenPlugin oraxen;
     private ConfigsManager configsManager;
@@ -51,7 +60,7 @@ public class OraxenPlugin extends JavaPlugin {
     private HudManager hudManager;
     private SoundManager soundManager;
     private InvManager invManager;
-    private ResourcePack resourcePack;
+    private List<ResourcePack> resourcePacks = new ArrayList<>();
     private ClickActionManager clickActionManager;
     public static boolean supportsDisplayEntities;
 
@@ -99,7 +108,9 @@ public class OraxenPlugin extends JavaPlugin {
         NMSHandlers.setup();
 
 
-        resourcePack = new ResourcePack();
+        uploadManager = new UploadManager(this);
+        resourcePacks.add(new ResourcePack(ResourcePack.V_1_21_3));
+        resourcePacks.add(new ResourcePack(Settings.SEND_PACK_MIN_PROTOCOL.toInt()));
         MechanicsManager.registerNativeMechanics();
         //CustomBlockData.registerListener(this); //Handle this manually
         hudManager = new HudManager(configsManager);
@@ -112,7 +123,8 @@ public class OraxenPlugin extends JavaPlugin {
         hudManager.registerTask();
         hudManager.parsedHudDisplays = hudManager.generateHudDisplays();
         Bukkit.getPluginManager().registerEvents(new ItemUpdater(), this);
-        resourcePack.generate();
+        resourcePack(pack -> pack.generate(false));
+        Bukkit.getPluginManager().registerEvents(this, this);
         RecipesManager.load(this);
         invManager = new InvManager();
         if (!VersionUtil.atOrAbove("1.21.2")) ArmorEquipEvent.registerListener(this);
@@ -136,7 +148,7 @@ public class OraxenPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        HandlerList.unregisterAll(this);
+        HandlerList.unregisterAll((Plugin) this);
         FurnitureFactory.unregisterEvolution();
         for (Player player : Bukkit.getOnlinePlayers())
             if (GlyphHandlers.isNms()) NMSHandlers.getHandler().glyphHandler().uninject(player);
@@ -144,6 +156,21 @@ public class OraxenPlugin extends JavaPlugin {
         CompatibilitiesManager.disableCompatibilities();
         CommandAPI.onDisable();
         Message.PLUGIN_UNLOADED.log();
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL)
+    public void onPlayerConnect(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        final PackSender sender = uploadManager.getSenderOrNull(player);
+        if (sender == null) {
+            return;
+        }
+        if (Settings.SEND_JOIN_MESSAGE.toBool()) sender.sendWelcomeMessage(player, true);
+        if (!Settings.SEND_PACK.toBool()) return;
+        int delay = (int) Settings.SEND_PACK_DELAY.getValue();
+        if (delay <= 0) sender.sendPack(player);
+        else Bukkit.getScheduler().runTaskLaterAsynchronously(OraxenPlugin.get(), () ->
+                sender.sendPack(player), delay * 20L);
     }
 
     public ResourcesManager getResourceManager() {
@@ -166,10 +193,6 @@ public class OraxenPlugin extends JavaPlugin {
 
     public UploadManager getUploadManager() {
         return uploadManager;
-    }
-
-    public void setUploadManager(final UploadManager uploadManager) {
-        this.uploadManager = uploadManager;
     }
 
     public FontManager getFontManager() {
@@ -204,8 +227,23 @@ public class OraxenPlugin extends JavaPlugin {
         return invManager;
     }
 
-    public ResourcePack getResourcePack() {
-        return resourcePack;
+    public void resourcePack(final Consumer<ResourcePack> consumer) {
+        for (ResourcePack resourcePack : resourcePacks) {
+            consumer.accept(resourcePack);
+        }
+    }
+
+    public ResourcePack getResourcePack(int protocol) {
+        for (ResourcePack pack : resourcePacks) {
+            if (protocol >= pack.getProtocol()) {
+                return pack;
+            }
+        }
+        throw new IllegalArgumentException();
+    }
+
+    public List<ResourcePack> getResourcePacks() {
+        return resourcePacks;
     }
 
     public ClickActionManager getClickActionManager() {

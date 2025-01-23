@@ -17,13 +17,13 @@ public abstract class PackSender {
         this.hostingProvider = hostingProvider;
     }
 
-    public abstract void register();
-
-    public abstract void unregister();
+    public HostingProvider getHostingProvider() {
+        return hostingProvider;
+    }
 
     public abstract void sendPack(Player player);
 
-    protected void sendWelcomeMessage(Player player, boolean delayed) {
+    public void sendWelcomeMessage(Player player, boolean delayed) {
         long delay = (int) Settings.JOIN_MESSAGE_DELAY.getValue();
         if (delay == -1 || !delayed)
             Message.COMMAND_JOIN_MESSAGE.send(player,

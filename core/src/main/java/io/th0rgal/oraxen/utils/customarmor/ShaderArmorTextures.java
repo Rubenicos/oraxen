@@ -364,8 +364,8 @@ public class ShaderArmorTextures {
         }
     }
 
-    public Set<VirtualFile> getOptifineFiles() throws FileNotFoundException {
-        Set<VirtualFile> optifineFiles = new HashSet<>(generateLeatherArmors());
+    public Set<VirtualFile> getOptifineFiles(int protocol) throws FileNotFoundException {
+        Set<VirtualFile> optifineFiles = new HashSet<>(generateLeatherArmors(protocol));
 
         for (Map.Entry<String, InputStream> armorFile : getAllArmors().entrySet()) {
             String fileName = armorFile.getKey();
@@ -441,7 +441,22 @@ public class ShaderArmorTextures {
         return string.toString();
     }
 
-    private List<VirtualFile> generateLeatherArmors() {
+    // assets/minecraft/textures/models/armor/leather_layer_1.png
+    // assets/minecraft/textures/entity/equipment/humanoid/leather.png
+
+    // assets/minecraft/textures/models/armor/leather_layer_1_overlay.png
+    // assets/minecraft/textures/entity/equipment/humanoid/leather_overlay.png
+
+    // assets/minecraft/textures/models/armor/template/leather_layer_1.png
+    // assets/minecraft/textures/entity/equipment/humanoid/template/leather.png
+
+    // assets/minecraft/textures/models/armor/leather_layer_2.png
+    // assets/minecraft/textures/entity/equipment/humanoid_leggings/leather.png
+
+    // assets/minecraft/textures/models/armor/template/leather_layer_2.png
+    // assets/minecraft/textures/entity/equipment/humanoid_leggings/template/leather_layer_2.png
+
+    private List<VirtualFile> generateLeatherArmors(int protocol) {
         List<VirtualFile> leatherArmors = new ArrayList<>();
         String absolute = OraxenPlugin.get().getDataFolder().getAbsolutePath() + "/pack/textures/models/armor";
         File leatherFile1 = new File(absolute, "/leather_layer_1.png");
@@ -588,22 +603,317 @@ public class ShaderArmorTextures {
 
     public static void generateArmorShaderFiles() {
         if (shaderType == ShaderType.LESS_FANCY) {
+            ShaderArmorTextures.NewLessFancyArmorShaders.generateArmorShaderFiles();
             ShaderArmorTextures.LessFancyArmorShaders.generateArmorShaderFiles();
         } else if (shaderType == ShaderType.FANCY) {
+            ShaderArmorTextures.NewFancyArmorShaders.generateArmorShaderFiles();
             ShaderArmorTextures.FancyArmorShaders.generateArmorShaderFiles();
         }
     }
 
     private static final String SHADER_PARAMETER_PLACEHOLDER = "{#TEXTURE_RESOLUTION#}";
 
+    private static class NewFancyArmorShaders {
+        private static void generateArmorShaderFiles() {
+            String parent = "assets/minecraft/shaders/core/";
+            String file = "rendertype_armor_cutout_no_cull";
+            final ResourcePack pack = OraxenPlugin.get().getResourcePack(ResourcePack.V_1_21_3);
+            pack.writeStringToVirtual(parent, file + ".json", getShaderJson());
+            pack.writeStringToVirtual(parent, file + ".vsh", getShaderVsh());
+            pack.writeStringToVirtual(parent, file + ".fsh", getShaderFsh());
+            pack.writeStringToVirtual(parent, "LICENSE.md", getLicense());
+        }
+
+        private static String getShaderVsh() {
+            return """
+                    #version 150
+                    
+                    #moj_import <minecraft:light.glsl>
+                    #moj_import <minecraft:fog.glsl>
+                    
+                    in vec3 Position;
+                    in vec4 Color;
+                    in vec2 UV0;
+                    in ivec2 UV1;
+                    in ivec2 UV2;
+                    in vec3 Normal;
+                    
+                    uniform sampler2D Sampler0;
+                    uniform sampler2D Sampler1;
+                    uniform sampler2D Sampler2;
+                    
+                    uniform mat4 ModelViewMat;
+                    uniform mat4 ProjMat;
+                    uniform mat4 TextureMat;
+                    uniform int FogShape;
+                    
+                    uniform vec3 Light0_Direction;
+                    uniform vec3 Light1_Direction;
+                    
+                    uniform float GameTime;
+                    
+                    out float vertexDistance;
+                    out vec4 vertexColor;
+                    out vec4 lightMapColor;
+                    out vec4 overlayColor;
+                    out vec2 texCoord0;
+                    
+                    flat out float isLeatherLayer;
+                    flat out float interpolClock;
+                    flat out float h_offset;
+                    flat out float emissivity;
+                    flat out float isFirstArmor;
+                    
+                    out vec2 nextFrameCoords;
+                    
+                    #define TEX_RES 16
+                    #define ANIM_SPEED 50 // Runs every 24 seconds
+                    #define IS_LEATHER_LAYER texelFetch(Sampler0, ivec2(0.0, 1.0), 0) == vec4(1.0) // If it's leather_layer_X.png texture
+                    
+                    #define fetchTextureInfo(base, pixel) texelFetch(Sampler0, ivec2(TEX_RES * 4.0 * base + 0.5 + pixel, 0), 0)
+                    
+                    void main() {
+                        gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+                    
+                        vertexDistance = fog_distance(Position, FogShape);
+                        vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, Color);
+                        lightMapColor = texelFetch(Sampler2, UV2 / 16, 0);
+                        overlayColor = texelFetch(Sampler1, UV1, 0);
+                    
+                        texCoord0 = UV0;
+                    
+                        ivec2 atlasSize = textureSize(Sampler0, 0);
+                        float armorAmount = atlasSize.x / (TEX_RES * 4.0);
+                        float maxFrames = atlasSize.y / (TEX_RES * 2.0);
+                    
+                        texCoord0.x /= armorAmount;
+                        texCoord0.y /= maxFrames;
+                    
+                        vec4 color;
+                        vec4 tint = Color;
+                    
+                        nextFrameCoords = UV0;
+                        interpolClock = 0.0;
+                        h_offset = 1.0 / armorAmount;
+                        emissivity = 0.0;
+                    
+                        // If it's a leather armor
+                        isLeatherLayer = float(IS_LEATHER_LAYER);
+                    
+                        if (isLeatherLayer > 0.5) {
+                            // Texture properties contains extra info about the armor texture, such as to enable shading
+                            vec4 textureProperties = vec4(0.0);
+                    
+                            // Custom color is the color of the armor
+                            vec4 colorMatch = vec4(0.0);
+                    
+                            // Loop through all armors in the texture atlas
+                            for (int i = 1; i < (armorAmount + 1); i++) {
+                                // Check if the current armor is the one we're looking for
+                                colorMatch = fetchTextureInfo(i, 0.0); // ~(0,0)
+                                if (tint == colorMatch) {
+                                    texCoord0.x += (h_offset * i);
+                    
+                                    vec4 animInfo = fetchTextureInfo(i, 1.0); // ~(1,0)
+                                    animInfo.rgb *= animInfo.a * 255.0;
+                    
+                                    textureProperties = fetchTextureInfo(i, 2.0); // ~(2,0)
+                                    textureProperties.rgb *= textureProperties.a * 255.0;
+                    
+                                    // If the armor is animated
+                                    if (animInfo != vec4(0)) {
+                                        // oh god it's animated
+                                        // animInfo = rgb(amount of frames, speed, interpolation [1 or 0] )
+                                        // textureProperties = rgb(emissive, tint, N/A)
+                                        // fract(GameTime * 1200) blinks every second so [0,1] spans every second.
+                                        float timer = floor(mod(GameTime * ANIM_SPEED * animInfo.g, animInfo.r));
+                    
+                                        // If the animation is interpolated
+                                        interpolClock = fract(GameTime * ANIM_SPEED * animInfo.g) * ceil(animInfo.b);
+                    
+                                        float v_offset = (TEX_RES * 2.0) / atlasSize.y * timer;
+                                        nextFrameCoords = texCoord0;
+                                        texCoord0.y += v_offset;
+                                        nextFrameCoords.y += (TEX_RES * 2.0) / atlasSize.y * mod(timer + 1, animInfo.r);
+                                    }
+                                    break;
+                                }
+                            }
+                    
+                            bool isTinted = textureProperties.g > 0;
+                            bool isEmissive = textureProperties.r > 0;
+                    
+                            isFirstArmor = float(texCoord0.x < (1 / armorAmount));
+                            emissivity = textureProperties.r;
+                    
+                            // If the armor is supposed to be the normal leather armor, return early and don't modify vertexColor.
+                            if (isFirstArmor > 0.5) return;
+                    
+                            if (isTinted && isEmissive) { // If the armor is tinted and emissive
+                                vertexColor = tint;
+                            } else if (isEmissive) { // If the armor is not tinted but is emissive
+                                vertexColor = vec4(1.0);
+                            } else if (!isTinted) { // If the armor is not tinted and not emissive
+                                vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, vec4(1.0));
+                            }
+                        }
+                    }
+                    """.trim();
+        }
+
+        private static String getShaderFsh() {
+            return """
+                    #version 150
+                    
+                    #moj_import <minecraft:fog.glsl>
+                    
+                    uniform sampler2D Sampler0;
+                    
+                    uniform vec4 ColorModulator;
+                    uniform float FogStart;
+                    uniform float FogEnd;
+                    uniform vec4 FogColor;
+                    
+                    in float vertexDistance;
+                    in vec4 vertexColor;
+                    in vec4 lightMapColor;
+                    in vec4 overlayColor;
+                    in vec2 texCoord0;
+                    
+                    flat in float isLeatherLayer;
+                    flat in float interpolClock;
+                    flat in float h_offset;
+                    flat in float emissivity;
+                    flat in float isFirstArmor;
+                    
+                    in vec2 nextFrameCoords;
+                    
+                    out vec4 fragColor;
+                    
+                    #define rougheq(a, b) (abs(a - b) < 0.1)
+                    
+                    void main() {
+                        vec4 color = texture(Sampler0, texCoord0);
+                    
+                        vec4 vertColor = vertexColor;
+                    
+                        if (isLeatherLayer > 0.5) {
+                    
+                            vec4 armor = mix(texture(Sampler0, texCoord0), texture(Sampler0, nextFrameCoords), interpolClock);
+                    
+                            #ifdef ALPHA_CUTOUT
+                            if (armor.a < ALPHA_CUTOUT) {
+                                discard;
+                            }
+                            #endif
+                    
+                            // If it's the first leather armor texture in the atlas (used for the vanilla leather texture, with no custom color specified)
+                            if (isFirstArmor > 0.5) {
+                                color = armor * vertColor * ColorModulator * lightMapColor;
+                            } else { // If it's a custom armor texture (the actual item being leather)
+                                bool isPartiallyEmissive = rougheq(emissivity, 1.0);
+                                bool isEmissive = emissivity > 0.0;
+                                float controlOpacity = texture(Sampler0, vec2(texCoord0.x + h_offset, texCoord0.y)).a;
+                    
+                                if (!isEmissive) {
+                                    vertColor *= lightMapColor;
+                                }
+                    
+                                if (isPartiallyEmissive) {
+                                    vertColor *= controlOpacity;
+                                }
+                    
+                                color = armor * vertColor * ColorModulator;
+                            }
+                        } else {
+                            #ifdef ALPHA_CUTOUT
+                            if (color.a < ALPHA_CUTOUT) {
+                                discard;
+                            }
+                            #endif
+                    
+                            color *= vertColor * ColorModulator * lightMapColor;
+                    
+                            #ifndef EMISSIVE
+                                color *= lightMapColor;
+                            #endif
+                        }
+                    
+                        fragColor = linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
+                    }
+                    """.replace(SHADER_PARAMETER_PLACEHOLDER, String.valueOf((int) Settings.CUSTOM_ARMOR_SHADER_RESOLUTION.getValue())).trim();
+        }
+
+        private static String getShaderJson() {
+            return """ 
+                    {
+                        "vertex": "minecraft:core/rendertype_armor_cutout_no_cull",
+                        "fragment": "minecraft:core/rendertype_armor_cutout_no_cull",
+                        "defines": {
+                            "values": {
+                                "ALPHA_CUTOUT": "0.1"
+                            },
+                            "flags": [
+                                "NO_OVERLAY"
+                            ]
+                        },
+                        "samplers": [
+                            { "name": "Sampler0" },
+                            { "name": "Sampler2" }
+                        ],
+                        "uniforms": [
+                            { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+                            { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+                            { "name": "ColorModulator", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 1.0 ] },
+                            { "name": "Light0_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0] },
+                            { "name": "Light1_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0] },
+                            { "name": "FogStart", "type": "float", "count": 1, "values": [ 0.0 ] },
+                            { "name": "FogEnd", "type": "float", "count": 1, "values": [ 1.0 ] },
+                            { "name": "FogColor", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] },
+                            { "name": "FogShape", "type": "int", "count": 1, "values": [ 0 ] },
+                            { "name": "GameTime", "type": "float", "count": 1, "values": [ 1.0 ] }
+                        ]
+                    }
+                    """.trim();
+        }
+
+        private static String getLicense() {
+            return """
+                    MIT License
+                    
+                    Copyright (c) 2022 Samuel Bruin
+                    
+                    Permission is hereby granted, free of charge, to any person obtaining a copy
+                    of this software and associated documentation files (the "Software"), to deal
+                    in the Software without restriction, including without limitation the rights
+                    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+                    copies of the Software, and to permit persons to whom the Software is
+                    furnished to do so, subject to the following conditions:
+                    
+                    The above copyright notice and this permission notice shall be included in all
+                    copies or substantial portions of the Software.
+                    
+                    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+                    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+                    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+                    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+                    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+                    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+                    SOFTWARE.
+                    """.trim();
+        }
+
+    }
+
     private static class FancyArmorShaders {
         private static void generateArmorShaderFiles() {
             String parent = "assets/minecraft/shaders/core/";
             String file = "rendertype_armor_cutout_no_cull";
-            ResourcePack.writeStringToVirtual(parent, file + ".json", getShaderJson());
-            ResourcePack.writeStringToVirtual(parent, file + ".vsh", getShaderVsh());
-            ResourcePack.writeStringToVirtual(parent, file + ".fsh", getShaderFsh());
-            ResourcePack.writeStringToVirtual(parent, "LICENSE.md", getLicense());
+            final ResourcePack pack = OraxenPlugin.get().getResourcePack(Settings.SEND_PACK_MIN_PROTOCOL.toInt());
+            pack.writeStringToVirtual(parent, file + ".json", getShaderJson());
+            pack.writeStringToVirtual(parent, file + ".vsh", getShaderVsh());
+            pack.writeStringToVirtual(parent, file + ".fsh", getShaderFsh());
+            pack.writeStringToVirtual(parent, "LICENSE.md", getLicense());
         }
 
         private static String getShaderVsh() {
@@ -844,16 +1154,215 @@ public class ShaderArmorTextures {
 
     }
 
+    private static class NewLessFancyArmorShaders {
+        private static void generateArmorShaderFiles() {
+            String shaders = "assets/minecraft/shaders";
+            final ResourcePack pack = OraxenPlugin.get().getResourcePack(ResourcePack.V_1_21_3);
+            pack.writeStringToVirtual(shaders + "/core", "rendertype_armor_cutout_no_cull.json", getShaderJson());
+            pack.writeStringToVirtual(shaders + "/core", "rendertype_outline.json", getOutlineJson());
+            pack.writeStringToVirtual(shaders + "/core/render", "armor.vsh", getArmorVsh());
+            pack.writeStringToVirtual(shaders + "/core/render", "armor.fsh", getArmorFsh());
+            pack.writeStringToVirtual(shaders + "/core/render", "glowing.vsh", getGlowingVsh());
+            pack.writeStringToVirtual(shaders + "/core/render", "glowing.fsh", getGlowingFsh());
+        }
+
+        public static String getShaderJson() {
+            return """ 
+                    {
+                        "vertex": "minecraft:core/render/armor",
+                        "fragment": "minecraft:core/render/armor",
+                        "samplers": [
+                            { "name": "Sampler0" },
+                            { "name": "Sampler2" }
+                        ],
+                        "uniforms": [
+                            { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+                            { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+                            { "name": "ColorModulator", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 1.0 ] },
+                            { "name": "Light0_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0] },
+                            { "name": "Light1_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0] },
+                            { "name": "FogStart", "type": "float", "count": 1, "values": [ 0.0 ] },
+                            { "name": "FogEnd", "type": "float", "count": 1, "values": [ 1.0 ] },
+                            { "name": "FogColor", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] },
+                            { "name": "FogShape", "type": "int", "count": 1, "values": [ 0 ] },
+                            { "name": "GameTime", "type": "float", "count": 1, "values": [ 1.0 ] }
+                        ]
+                    }""".trim();
+        }
+
+        public static String getOutlineJson() {
+            return """
+                    {
+                        "vertex": "minecraft:core/render/glowing",
+                        "fragment": "minecraft:core/render/glowing",
+                        "samplers": [
+                            { "name": "Sampler0" }
+                        ],
+                        "uniforms": [
+                            { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+                            { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+                            { "name": "ColorModulator", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 1.0 ] }
+                        ]
+                    }""".trim();
+        }
+
+        public static String getArmorVsh() {
+            return """
+                    #version 150
+                    
+                    #moj_import <minecraft:light.glsl>
+                    #moj_import <minecraft:fog.glsl>
+                    
+                    in vec3 Position;
+                    in vec4 Color;
+                    in vec2 UV0;
+                    in ivec2 UV1;
+                    in ivec2 UV2;
+                    in vec3 Normal;
+                    
+                    uniform sampler2D Sampler0;
+                    uniform sampler2D Sampler2;
+                    
+                    uniform mat4 ModelViewMat;
+                    uniform mat4 ProjMat;
+                    uniform mat4 TextureMat;
+                    uniform int FogShape;
+                    
+                    uniform vec3 Light0_Direction;
+                    uniform vec3 Light1_Direction;
+                    
+                    out float vertexDistance;
+                    out vec4 vertexColor;
+                    out vec4 tintColor;
+                    out vec4 lightColor;
+                    out vec4 overlayColor;
+                    out vec2 uv;
+                    
+                    int toint(vec3 c) {
+                        ivec3 v = ivec3(c*255);
+                        return (v.r<<16)+(v.g<<8)+v.b;
+                    }
+                    
+                    void main() {
+                        gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+                    
+                        vertexDistance = fog_distance(Position, FogShape);
+                        tintColor = Color;
+                        vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, vec4(1));
+                        lightColor = texelFetch(Sampler2, UV2 / 16, 0);
+                        uv = UV0;
+                    
+                        //number of armors from texture size
+                        vec2 size = textureSize(Sampler0, 0);
+                        int n = int(2*size.y/size.x);
+                        //if theres more than 1 custom armor
+                        if (n > 1 && size.x < 256) {
+                            //divide uv by number of armors, it is now on the first armor
+                            uv.y /= n;
+                            //if color index is within number of armors
+                            int i = toint(Color.rgb);
+                            if (i < n) {
+                                //move uv down to index
+                                uv.y += i*size.x/size.y/2.;
+                                //remove tint color
+                                tintColor = vec4(1);
+                            }
+                        }
+                    }""".trim();
+        }
+
+        public static String getArmorFsh() {
+            return """
+                    #version 150
+                    
+                    #moj_import <minecraft:fog.glsl>
+                    
+                    uniform sampler2D Sampler0;
+                    
+                    uniform vec4 ColorModulator;
+                    uniform float FogStart;
+                    uniform float FogEnd;
+                    uniform vec4 FogColor;
+                    
+                    in float vertexDistance;
+                    in vec4 vertexColor;
+                    in vec4 tintColor;
+                    in vec4 lightColor;
+                    in vec2 uv;
+                    
+                    out vec4 fragColor;
+                    
+                    void main() {
+                        vec4 color = texture(Sampler0, uv);
+                        if (color.a < 0.1) discard;
+                        color *= tintColor * ColorModulator;
+                        color *= vertexColor * lightColor; //shading
+                        fragColor = linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
+                    }""".trim();
+        }
+
+        public static String getGlowingVsh() {
+            return """
+                    #version 150
+                    
+                    uniform sampler2D Sampler0;
+                    
+                    in vec3 Position;
+                    in vec4 Color;
+                    in vec2 UV0;
+                    
+                    uniform mat4 ModelViewMat;
+                    uniform mat4 ProjMat;
+                    
+                    out vec4 vertexColor;
+                    out vec2 uv;
+                    
+                    void main() {
+                        gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+                        vertexColor = Color;
+                        uv = UV0;
+                    
+                        //we assume if y >= 2x it is an armor and divide uv
+                        //cannot pass tint color here so it's the only option
+                        vec2 size = textureSize(Sampler0, 0);
+                        if (size.y >= 2*size.x && size.x < 256) {
+                            uv.y /= 2*size.y/size.x;
+                        }
+                    }""".trim();
+        }
+
+        public static String getGlowingFsh() {
+            return """
+                    #version 150
+                    
+                    uniform sampler2D Sampler0;
+                    
+                    uniform vec4 ColorModulator;
+                    
+                    in vec4 vertexColor;
+                    in vec2 uv;
+                    
+                    out vec4 fragColor;
+                    
+                    void main() {
+                        vec4 color = texture(Sampler0, uv);
+                        if (color.a == 0.0) discard;
+                        fragColor = vec4(ColorModulator.rgb * vertexColor.rgb, ColorModulator.a);
+                    }""".trim();
+        }
+    }
+
     private static class LessFancyArmorShaders {
         private static void generateArmorShaderFiles() {
             String shaders = "assets/minecraft/shaders";
-            ResourcePack.writeStringToVirtual(shaders + "/core", "rendertype_armor_cutout_no_cull.json", getShaderJson());
-            ResourcePack.writeStringToVirtual(shaders + "/core", "rendertype_outline.json", getOutlineJson());
-            ResourcePack.writeStringToVirtual(shaders + "/core/render", "armor.vsh", getArmorVsh());
-            ResourcePack.writeStringToVirtual(shaders + "/core/render", "armor.fsh", getArmorFsh());
-            ResourcePack.writeStringToVirtual(shaders + "/core/render", "glowing.vsh", getGlowingVsh());
-            ResourcePack.writeStringToVirtual(shaders + "/core/render", "glowing.fsh", getGlowingFsh());
-            ResourcePack.writeStringToVirtual(shaders + "/include", "LICENSE.md", getFogGlsl());
+            final ResourcePack pack = OraxenPlugin.get().getResourcePack(Settings.SEND_PACK_MIN_PROTOCOL.toInt());
+            pack.writeStringToVirtual(shaders + "/core", "rendertype_armor_cutout_no_cull.json", getShaderJson());
+            pack.writeStringToVirtual(shaders + "/core", "rendertype_outline.json", getOutlineJson());
+            pack.writeStringToVirtual(shaders + "/core/render", "armor.vsh", getArmorVsh());
+            pack.writeStringToVirtual(shaders + "/core/render", "armor.fsh", getArmorFsh());
+            pack.writeStringToVirtual(shaders + "/core/render", "glowing.vsh", getGlowingVsh());
+            pack.writeStringToVirtual(shaders + "/core/render", "glowing.fsh", getGlowingFsh());
+            pack.writeStringToVirtual(shaders + "/include", "fog.glsl", getFogGlsl());
         }
 
         public static String getShaderJson() {

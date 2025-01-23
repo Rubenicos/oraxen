@@ -41,21 +41,30 @@ import java.util.zip.ZipInputStream;
 
 public class ResourcePack {
 
+    public static final int V_1_21_3 = 768;
+
+    private final int protocol;
     private final Map<String, Collection<Consumer<File>>> packModifiers;
-    private static Map<String, VirtualFile> outputFiles;
+    private final Map<String, VirtualFile> outputFiles;
     private ShaderArmorTextures shaderArmorTextures;
     private TrimArmorDatapack trimArmorDatapack;
     private ComponentArmorModels componentArmorModels;
     private static final File packFolder = new File(OraxenPlugin.get().getDataFolder(), "pack");
-    private final File pack = new File(packFolder, packFolder.getName() + ".zip");
+    private final File pack;
 
-    public ResourcePack() {
+    public ResourcePack(int protocol) {
         // we use maps to avoid duplicate
-        packModifiers = new HashMap<>();
-        outputFiles = new HashMap<>();
+        this.protocol = protocol;
+        this.packModifiers = new HashMap<>();
+        this.outputFiles = new HashMap<>();
+        this.pack = new File(packFolder, packFolder.getName() + protocol + ".zip");
     }
 
-    public void generate() {
+    public int getProtocol() {
+        return protocol;
+    }
+
+    public void generate(boolean isReload) {
         outputFiles.clear();
 
         makeDirsIfNotExists(packFolder, new File(packFolder, "assets"));
@@ -161,13 +170,7 @@ public class ResourcePack {
             ZipUtils.writeZipFile(pack, event.getOutput());
 
             UploadManager uploadManager = OraxenPlugin.get().getUploadManager();
-            if (uploadManager != null) { // If the uploadManager isnt null, this was triggered by a pack-reload
-                uploadManager.uploadAsyncAndSendToPlayers(OraxenPlugin.get().getResourcePack(), true, true);
-            } else { // Otherwise this is was triggered on server-startup
-                uploadManager = new UploadManager(OraxenPlugin.get());
-                OraxenPlugin.get().setUploadManager(uploadManager);
-                uploadManager.uploadAsyncAndSendToPlayers(OraxenPlugin.get().getResourcePack(), false, false);
-            }
+            uploadManager.uploadAsyncAndSendToPlayers(this, isReload);
         });
     }
 
@@ -401,7 +404,7 @@ public class ResourcePack {
         packModifiers.put(groupName, Arrays.asList(modifiers));
     }
 
-    public static void addOutputFiles(final VirtualFile... files) {
+    public void addOutputFiles(final VirtualFile... files) {
         for (VirtualFile file : files)
             outputFiles.put(file.getPath(), file);
     }
@@ -539,7 +542,7 @@ public class ResourcePack {
         return sounds;
     }
 
-    public static void writeStringToVirtual(String folder, String name, String content) {
+    public void writeStringToVirtual(String folder, String name, String content) {
         folder = !folder.endsWith("/") ? folder : folder.substring(0, folder.length() - 1);
         addOutputFiles(
                 new VirtualFile(folder, name, new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))));
@@ -561,7 +564,7 @@ public class ResourcePack {
         final File[] files = dir.listFiles();
         if (files != null)
             for (final File file : files)
-                if (!file.isDirectory() && !Arrays.asList(excluded).contains(file.getName()))
+                if (!file.isDirectory() && !(file.getName().startsWith("pack") && file.getName().endsWith(".zip")))
                     readFileToVirtuals(fileList, file, newFolder);
     }
 
@@ -642,7 +645,7 @@ public class ResourcePack {
                         output.add(
                                 new VirtualFile(armorPath, "leather_layer_2.png", shaderArmorTextures.getLayerTwo()));
                         if (Settings.CUSTOM_ARMOR_SHADER_GENERATE_SHADER_COMPATIBLE_ARMOR.toBool()) {
-                            output.addAll(shaderArmorTextures.getOptifineFiles());
+                            output.addAll(shaderArmorTextures.getOptifineFiles(this.protocol));
                         }
                     } catch (IOException e) {
                         e.printStackTrace();

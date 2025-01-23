@@ -13,6 +13,7 @@ import io.th0rgal.oraxen.pack.upload.hosts.HostingProvider;
 import io.th0rgal.oraxen.pack.upload.hosts.Polymath;
 import io.th0rgal.oraxen.utils.AdventureUtils;
 import io.th0rgal.oraxen.utils.EventUtils;
+import io.th0rgal.oraxen.utils.PlayerProtocol;
 import io.th0rgal.oraxen.utils.logs.Logs;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
@@ -25,31 +26,58 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Parameter;
 import java.nio.file.ProviderNotFoundException;
 import java.util.Locale;
+import java.util.TreeMap;
 
 public class UploadManager {
 
     private static String url;
     private final Plugin plugin;
     private final boolean enabled;
-    private final HostingProvider hostingProvider;
-    private PackSender packSender;
+    private final TreeMap<Integer, PackSender> packSenders;
     private PackReceiver receiver;
 
     public UploadManager(final Plugin plugin) {
         this.plugin = plugin;
         enabled = Settings.UPLOAD.toBool();
-        hostingProvider = createHostingProvider();
+        packSenders = new TreeMap<>();
     }
 
-    public HostingProvider getHostingProvider() {
-        return hostingProvider;
+    public HostingProvider getHostingProvider(Player player) {
+        return getHostingProvider(PlayerProtocol.of(player));
     }
 
-    public PackSender getSender() {
-        return packSender;
+    public HostingProvider getHostingProvider(int protocol) {
+        for (Integer packProtocol : packSenders.descendingKeySet()) {
+            if (packProtocol <= protocol) {
+                return packSenders.get(packProtocol).getHostingProvider();
+            }
+        }
+        return packSenders.firstEntry().getValue().getHostingProvider();
     }
 
-    public void uploadAsyncAndSendToPlayers(final ResourcePack resourcePack, final boolean updatePackSender, final boolean isReload) {
+    public PackSender getSender(Player player) {
+        return getSender(PlayerProtocol.of(player));
+    }
+
+    public PackSender getSender(int protocol) {
+        final PackSender sender = getSenderOrNull(protocol);
+        return sender != null ? null : packSenders.firstEntry().getValue();
+    }
+
+    public PackSender getSenderOrNull(Player player) {
+        return getSenderOrNull(PlayerProtocol.of(player));
+    }
+
+    public PackSender getSenderOrNull(int protocol) {
+        for (Integer packProtocol : packSenders.descendingKeySet()) {
+            if (protocol >= packProtocol) {
+                return packSenders.get(packProtocol);
+            }
+        }
+        return null;
+    }
+
+    public void uploadAsyncAndSendToPlayers(final ResourcePack resourcePack, final boolean isReload) {
         if (!enabled)
             return;
 
@@ -63,6 +91,12 @@ public class UploadManager {
             EventUtils.callEvent(new OraxenPackPreUploadEvent());
 
             Message.PACK_UPLOADING.log();
+            PackSender packSender = packSenders.get(resourcePack.getProtocol());
+            if (packSender == null) {
+                packSender = new BukkitPackSender(createHostingProvider());
+                packSenders.put(resourcePack.getProtocol(), packSender);
+            }
+            HostingProvider hostingProvider = packSender.getHostingProvider();
             if (!hostingProvider.uploadPack(resourcePack.getFile())) {
                 Message.PACK_NOT_UPLOADED.log();
                 return;
@@ -73,23 +107,22 @@ public class UploadManager {
                     Bukkit.getPluginManager().callEvent(uploadEvent));
 
             Message.PACK_UPLOADED.log(
+                    AdventureUtils.tagResolver("protocol", String.valueOf(resourcePack.getProtocol())),
                     AdventureUtils.tagResolver("url", hostingProvider.getPackURL()),
                     AdventureUtils.tagResolver("delay", String.valueOf(System.currentTimeMillis() - time)));
 
-            if (packSender == null) packSender = new BukkitPackSender(hostingProvider);
-            else if (updatePackSender) {
-                packSender.unregister();
-                packSender = new BukkitPackSender(hostingProvider);
+            if (isReload && !Settings.SEND_ON_RELOAD.toBool()) {
+                return;
             }
-
-            if (isReload && !Settings.SEND_ON_RELOAD.toBool() && packSender != null) packSender.unregister();
-            else if (Settings.SEND_PACK.toBool() || Settings.SEND_JOIN_MESSAGE.toBool()) {
-                packSender.register();
+            if (Settings.SEND_PACK.toBool() || Settings.SEND_JOIN_MESSAGE.toBool()) {
                 if (!hostingProvider.getPackURL().equals(url))
-                    for (Player player : Bukkit.getOnlinePlayers())
-                        packSender.sendPack(player);
+                    for (Player player : Bukkit.getOnlinePlayers()) {
+                        if (PlayerProtocol.of(player) >= resourcePack.getProtocol()) {
+                            packSender.sendPack(player);
+                        }
+                    }
                 url = hostingProvider.getPackURL();
-            } else if (packSender != null) packSender.unregister();
+            }
         });
     }
 

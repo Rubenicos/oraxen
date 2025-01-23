@@ -8,6 +8,7 @@ import dev.jorel.commandapi.arguments.TextArgument;
 import io.th0rgal.oraxen.OraxenPlugin;
 import io.th0rgal.oraxen.config.Message;
 import io.th0rgal.oraxen.config.ResourcesManager;
+import io.th0rgal.oraxen.pack.dispatch.PackSender;
 import io.th0rgal.oraxen.utils.AdventureUtils;
 import org.bukkit.entity.Player;
 
@@ -34,8 +35,12 @@ public class PackCommand {
                 .withOptionalArguments(new EntitySelectorArgument.ManyPlayers("targets"))
                 .executes((sender, args) -> {
                     final Collection<Player> targets = (Collection<Player>) args.getOptional("targets").orElse(sender instanceof Player ? sender : null);
-                    if (targets != null) for (final Player target : targets)
-                        OraxenPlugin.get().getUploadManager().getSender().sendPack(target);
+                    if (targets != null) for (final Player target : targets) {
+                        final PackSender packSender = OraxenPlugin.get().getUploadManager().getSenderOrNull(target);
+                        if (packSender != null) {
+                            packSender.sendPack(target);
+                        }
+                    }
                 });
     }
 
@@ -46,7 +51,7 @@ public class PackCommand {
                     final Collection<Player> targets = (Collection<Player>) args.getOptional("targets").orElse(sender instanceof Player ? sender : null);
                     if (targets != null) for (final Player target : targets)
                         Message.COMMAND_JOIN_MESSAGE.send(target, AdventureUtils.tagResolver("pack_url",
-                                (OraxenPlugin.get().getUploadManager().getHostingProvider().getPackURL())));
+                                (OraxenPlugin.get().getUploadManager().getHostingProvider(target).getPackURL())));
                 });
     }
 

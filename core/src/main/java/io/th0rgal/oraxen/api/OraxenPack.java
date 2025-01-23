@@ -24,7 +24,7 @@ public class OraxenPack {
         for (File file : files) {
             try(InputStream inputStream = new FileInputStream(file)) {
                 VirtualFile virtualFile = new VirtualFile(file.getParent(), file.getName(), inputStream);
-                ResourcePack.addOutputFiles(virtualFile);
+                OraxenPlugin.get().resourcePack(pack -> pack.addOutputFiles(virtualFile));
             } catch (IOException e) {
                 Logs.logWarning("Failed to add file " + file.getName() + " to the resource pack");
             }
@@ -32,18 +32,19 @@ public class OraxenPack {
     }
 
     public static File getPack() {
-        return OraxenPlugin.get().getResourcePack().getFile();
+        return OraxenPlugin.get().getResourcePacks().getFirst().getFile();
     }
 
     public static void uploadPack() {
-        UploadManager uploadManager = new UploadManager(OraxenPlugin.get());
-        OraxenPlugin.get().setUploadManager(uploadManager);
-        uploadManager.uploadAsyncAndSendToPlayers(OraxenPlugin.get().getResourcePack(), true, true);
+        UploadManager uploadManager = OraxenPlugin.get().getUploadManager();
+        OraxenPlugin.get().resourcePack(pack -> {
+            uploadManager.uploadAsyncAndSendToPlayers(pack, true);
+        });
     }
 
     public static void reloadPack() {
         OraxenPlugin.get().setFontManager(new FontManager(OraxenPlugin.get().getConfigsManager()));
         OraxenPlugin.get().setSoundManager(new SoundManager(OraxenPlugin.get().getConfigsManager().getSound()));
-        OraxenPlugin.get().getResourcePack().generate();
+        OraxenPlugin.get(). resourcePack(pack -> pack.generate(true));
     }
 }
