@@ -115,12 +115,13 @@ public class UploadManager {
                 return;
             }
             if (Settings.SEND_PACK.toBool() || Settings.SEND_JOIN_MESSAGE.toBool()) {
-                if (!hostingProvider.getPackURL().equals(url))
+                if (!hostingProvider.getPackURL().equals(url)) {
                     for (Player player : Bukkit.getOnlinePlayers()) {
                         if (PlayerProtocol.of(player) >= resourcePack.getProtocol()) {
                             packSender.sendPack(player);
                         }
                     }
+                }
                 url = hostingProvider.getPackURL();
             }
         });

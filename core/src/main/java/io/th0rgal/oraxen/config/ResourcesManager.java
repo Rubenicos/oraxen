@@ -87,7 +87,7 @@ public class ResourcesManager {
             if (!Settings.CUSTOM_ARMOR_SHADER_GENERATE_CUSTOM_TEXTURES.toBool() && entry.getName().startsWith("pack/textures/models/armor/leather_layer")) return;
         }
         if (entry.getName().startsWith("items/")) extractVersionSpecificItemConfig(entry);
-        else plugin.saveResource(entry.getName(), true);
+        else plugin.saveResource(entry.getName(), false);
     }
 
     private void extractVersionSpecificItemConfig(ZipEntry entry) {

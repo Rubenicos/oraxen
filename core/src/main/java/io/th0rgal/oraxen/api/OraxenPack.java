@@ -45,6 +45,6 @@ public class OraxenPack {
     public static void reloadPack() {
         OraxenPlugin.get().setFontManager(new FontManager(OraxenPlugin.get().getConfigsManager()));
         OraxenPlugin.get().setSoundManager(new SoundManager(OraxenPlugin.get().getConfigsManager().getSound()));
-        OraxenPlugin.get(). resourcePack(pack -> pack.generate(true));
+        OraxenPlugin.get().resourcePack(pack -> pack.generate(true));
     }
 }
